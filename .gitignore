@@ -1,0 +1,15 @@
+# virtual environment & caches
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# secrets — never commit API keys
+.env
+
+# the real corpus (large; documented in the data registry instead)
+data/raw/
+
+# generated index artifacts (rebuilt with `python naive/rag.py index`)
+naive/index.npz
+naive/chunks.json

@@ -1,0 +1,2 @@
+{"id": "dev-001", "type": "factual", "language": "en", "question": "What is the parental income limit for the Post Matric Scholarship for SC students?", "answer": "The combined annual income of parents/guardians must not exceed Rs. 2.5 lakh.", "gold_doc_ids": ["post_matric_scholarship.md"]}
+{"id": "dev-002", "type": "factual", "language": "en", "question": "How much assistance does PMAY-G give for building a house in hilly areas?", "answer": "Rs. 1.30 lakh in hilly states, difficult areas and IAP districts (Rs. 1.20 lakh in plain areas).", "gold_doc_ids": ["pmay_gramin.md"]}
