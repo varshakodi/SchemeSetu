@@ -5,7 +5,7 @@ Targets (PRD §5): hit@5 ≥ 0.85 · faithfulness ≥ 0.90 · trap refusal ≥ 0
 
 | Phase | Date | hit@5 | MRR@10 | Faithfulness | Trap refusal | False refusal | p50 latency | Notes |
 |---|---|---|---|---|---|---|---|---|
-| 1 — naive (fixed chunks, MiniLM, cosine) | 2026-08-27 | 1.00* | 1.000* | — | — | — | — | *starter golden set only (2 answerable + 1 trap) — far too small to trust; grow to 55 q and re-run. LLM-judge metrics pending API key. Corpus: 65 chunks / 12 docs. Trap vs answerable top-1 score: 0.48 vs 0.61 (gap too narrow for naive threshold refusal). |
+| 1 — naive (fixed chunks, MiniLM, cosine) | 2026-08-27 | 1.00* | 1.000* | — | — | — | — | *starter golden set only (2 answerable + 1 trap) — far too small to trust; grow to 55 q and re-run. LLM-judge metrics pending API key. Corpus: 81 chunks / 18 docs. Trap vs answerable top-1 score: golden 0.48 vs 0.61; dev 0.35 vs 0.64. First ranking slip on dev set (MRR 0.929): NMMSS gold doc at rank 2, outranked by the other scholarship doc — scholarship-vs-scholarship confusion, a reranker target. |
 | 2 — chunking experiments | | | | | | | | winner: ___ |
 | 3 — hybrid (BM25 + dense + RRF) | | | | | | | | |
 | 4 — reranker + citations | | | | | | | | |

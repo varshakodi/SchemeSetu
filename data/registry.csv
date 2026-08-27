@@ -9,6 +9,12 @@ pm_kisan_faq.pdf,PM-KISAN official FAQ,Ministry of Agriculture and Farmers Welfa
 pm_kisan_og_amendment.pdf,PM-KISAN amendment to operational guidelines,Ministry of Agriculture and Farmers Welfare,en,https://web.archive.org/web/20190711073949/http://www.pmkisan.gov.in/Documents/Amendment%20to%20OG-converted.pdf,2026-08-27,archived copy; 1pp
 pm_kisan_og_clarifications.pdf,PM-KISAN clarifications on operational guidelines,Ministry of Agriculture and Farmers Welfare,en,https://web.archive.org/web/20190712011243/http://pmkisan.gov.in/Documents/clarification_on_OGs_of_PMKISAN.PDF,2026-08-27,archived copy; 1pp
 (pending) pmayg_framework_english.pdf,PMAY-G Framework for Implementation,Ministry of Rural Development,en,https://web.archive.org/web/20211018211026/https://pmayg.nic.in/netiay/Document/English_Book_Final.pdf,,PENDING: archive snapshot truncated at exactly 1 MiB from current network; re-fetch via VPN or from India
+myscheme_apy.md,Atal Pension Yojana,Ministry of Finance,en,https://www.myscheme.gov.in/schemes/apy,2026-08-27,partial: details only
+myscheme_pmmvy.md,PM Matru Vandana Yojana,Ministry of Women and Child Development,en,https://www.myscheme.gov.in/schemes/pmmvy,2026-08-27,partial: details only (amounts captured)
+myscheme_pmjjby.md,PM Jeevan Jyoti Bima Yojana,Ministry of Finance,en,https://www.myscheme.gov.in/schemes/pmjjby,2026-08-27,partial-thin: one paragraph; amounts missing
+myscheme_pmsby.md,PM Suraksha Bima Yojana,Ministry of Finance,en,https://www.myscheme.gov.in/schemes/pmsby,2026-08-27,partial: details only (premium captured)
+myscheme_ab_pmjay.md,Ayushman Bharat PM-JAY,Ministry of Health & Family Welfare,en,https://www.myscheme.gov.in/schemes/ab-pmjay,2026-08-27,partial: details only (cover amount captured)
+myscheme_nmmss.md,National Means-cum-Merit Scholarship,Ministry of Education,en,https://www.myscheme.gov.in/schemes/nmmss,2026-08-27,partial: details only (income ceiling captured)
 pm_kisan.md,PM-KISAN,sample,en,(hand-written placeholder in data/samples),2026-08-24,sample — retire once real corpus covers it
 post_matric_scholarship.md,PMS-SC,sample,en,(hand-written placeholder in data/samples),2026-08-24,sample — retire once real corpus covers it
 pmay_gramin.md,PMAY-Gramin,sample,en,(hand-written placeholder in data/samples),2026-08-24,sample — retire once real corpus covers it
