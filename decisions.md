@@ -21,3 +21,11 @@ answers live. Template:
 **003 — Chunking: fixed ~800 chars with 150 overlap (24 Aug 2026)**
 **Decision:** paragraph-packed fixed-size chunks as the Week-1 baseline. **Alternatives:** recursive splitting, structure-aware (by headings) — both scheduled for Week 2.
 **Why:** simplest possible baseline; its eval numbers are the yardstick the Week-2 strategies must beat. Chosen by simplicity, not by measurement — that's acceptable only for a baseline. **Revisit when:** Week 2, by dev-set numbers.
+
+**004 — Corpus acquisition: browser-rendered myScheme pages + official PDFs (27 Aug 2026)**
+**Decision:** extract scheme text from myscheme.gov.in via a real browser (the site is a JavaScript app whose sections load client-side, sometimes flakily), and download guideline PDFs where reachable; every document gets a provenance header and a row in `data/registry.csv`. **Alternatives:** direct portal downloads (pmkisan.gov.in and pmayg.nic.in timed out from this network; agriwelfare.gov.in blocks non-browser clients with 403), the myScheme private API (undocumented, needs a scraped key — rejected), third-party mirrors like InstaPDF/Scribd (weak provenance — last resort only).
+**Why:** corpus authenticity and traceability beat convenience; the registry records exactly what was fetched, from where, when, and how complete it is (three pages captured partial sections — recorded, not hidden). Raw corpus files stay out of git (large, redistributable from source); the registry IS committed, so anyone can rebuild the corpus. **Revisit when:** portals become reachable (fetch the canonical guideline PDFs), or corpus needs Hindi documents (Week 6).
+
+**005 — PDF parsing: pypdf (27 Aug 2026)**
+**Decision:** `pypdf` for PDF→text, with per-page thin-page warnings. **Alternatives:** PyMuPDF (better layout handling, AGPL license), Docling (best tables/structure, heavy), OCR pipelines (only needed for scanned documents).
+**Why:** pure-Python, tiny, sufficient for text-first PDFs like our current guidelines; the parse report tells us when a document needs a heavier tool instead of failing silently. **Revisit when:** a critical document shows thin-page warnings (scanned) or mangled tables — that's the trigger to bring in Docling per PRD §8.

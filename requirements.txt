@@ -3,3 +3,4 @@
 numpy==2.4.6
 sentence-transformers==6.0.0
 anthropic==1.0.0
+pypdf==6.16.2

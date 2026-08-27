@@ -111,17 +111,27 @@ def chunk_text(text: str) -> list[str]:
 
 # --- Step 3: embeddings -------------------------------------------------------
 
+_embedder = None
+
+
 def get_embedder():
-    """Load the embedding model (downloads ~90 MB from Hugging Face on first run).
+    """Load the embedding model once, then reuse it (~90 MB download on first run).
 
     WHAT IS AN EMBEDDING? A function that turns text into a list of numbers
     (here: 384 of them — a "vector") such that texts with similar MEANING get
     nearby vectors. "Am I eligible?" and "Who qualifies?" share almost no
     words, but their vectors point in nearly the same direction. That is what
     lets retrieval beat plain keyword search.
+
+    The model takes seconds to load, so we cache it in a module-level variable:
+    without this, an eval over 55 questions would reload it 55 times. General
+    rule: objects that are expensive to create and cheap to reuse get cached.
     """
-    from sentence_transformers import SentenceTransformer  # imported lazily: slow import
-    return SentenceTransformer(EMBED_MODEL)
+    global _embedder
+    if _embedder is None:
+        from sentence_transformers import SentenceTransformer  # slow import, done once
+        _embedder = SentenceTransformer(EMBED_MODEL)
+    return _embedder
 
 
 def build_index() -> None:

@@ -1,0 +1,10 @@
+doc_id,scheme,ministry_or_state,language,source_url,retrieved,status
+myscheme_pm_kisan.md,PM-KISAN,Ministry of Agriculture and Farmers Welfare,en,https://www.myscheme.gov.in/schemes/pm-kisan,2026-08-27,full
+myscheme_pmay_g.md,PMAY-Gramin,Ministry of Rural Development,en,https://www.myscheme.gov.in/schemes/pmay-g,2026-08-27,full
+myscheme_pmfby.md,PMFBY,Ministry of Agriculture and Farmers Welfare,en,https://www.myscheme.gov.in/schemes/pmfby,2026-08-27,partial: details/objectives only
+myscheme_kcc.md,Kisan Credit Card,Ministry of Agriculture and Farmers Welfare,en,https://www.myscheme.gov.in/schemes/kcc,2026-08-27,partial: benefits/eligibility missing
+myscheme_pms_sc_gujarat.md,Post-Matric Scholarship SC (Gujarat variant),Gujarat / Min. of Social Justice & Empowerment,en,https://www.myscheme.gov.in/schemes/pmsscs-g,2026-08-27,partial: details only
+pms_sc_guidelines_rajasthan.pdf,Post-Matric Scholarship SC — central guidelines (Rajasthan copy),Rajasthan SJE / Min. of Social Justice & Empowerment,en,https://sje.rajasthan.gov.in/Schemes/sc%20pms.pdf,2026-08-27,PDF 14pp; parsed to .txt by ingest/parse.py
+pm_kisan.md,PM-KISAN,sample,en,(hand-written placeholder in data/samples),2026-08-24,sample — retire once real corpus covers it
+post_matric_scholarship.md,PMS-SC,sample,en,(hand-written placeholder in data/samples),2026-08-24,sample — retire once real corpus covers it
+pmay_gramin.md,PMAY-Gramin,sample,en,(hand-written placeholder in data/samples),2026-08-24,sample — retire once real corpus covers it
