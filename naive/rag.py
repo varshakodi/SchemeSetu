@@ -42,7 +42,10 @@ import numpy as np
 # difference between "I used RAG" and "I engineered a retrieval system".
 
 ROOT = Path(__file__).resolve().parent.parent
-DOC_DIRS = [ROOT / "data" / "samples", ROOT / "data" / "raw"]
+sys.path.insert(0, str(ROOT))  # so `ingest` imports work when run as a script
+
+from ingest.chunkers import CHUNKERS, load_documents  # noqa: E402
+
 INDEX_FILE = Path(__file__).resolve().parent / "index.npz"
 CHUNKS_FILE = Path(__file__).resolve().parent / "chunks.json"
 
@@ -51,8 +54,9 @@ CHUNKS_FILE = Path(__file__).resolve().parent / "chunks.json"
 # Hindi — and measure what that changes. See decisions.md entry 002.
 EMBED_MODEL = "all-MiniLM-L6-v2"
 
-CHUNK_CHARS = 800      # target chunk size (characters, not tokens — simpler for now)
-OVERLAP_CHARS = 150    # how much text neighbouring chunks share
+# Chunking lives in ingest/chunkers.py (loading + cleaning + 3 strategies).
+# "structure" won the Week-2 head-to-head — decisions.md entry 006 has the numbers.
+CHUNK_STRATEGY = "structure"
 TOP_K = 4              # how many chunks we retrieve for the LLM
 
 # Generation model — Claude Haiku 4.5: the cheap/fast tier, good grounding.
@@ -60,53 +64,11 @@ TOP_K = 4              # how many chunks we retrieve for the LLM
 GEN_MODEL = "claude-haiku-4-5"
 
 
-# --- Step 1: load documents ---------------------------------------------------
-
-def load_documents() -> list[tuple[str, str]]:
-    """Read every .md/.txt file under data/samples and data/raw.
-
-    Returns (doc_id, text) pairs. The doc_id (just the filename) travels with
-    every chunk so answers can cite their source — a citation is only possible
-    if we never lose track of where a piece of text came from.
-    """
-    docs = []
-    for d in DOC_DIRS:
-        if not d.exists():
-            continue
-        for path in sorted(d.glob("*")):
-            if path.suffix.lower() in {".md", ".txt"}:
-                docs.append((path.name, path.read_text(encoding="utf-8")))
-    return docs
-
-
-# --- Step 2: chunking ---------------------------------------------------------
-
-def chunk_text(text: str) -> list[str]:
-    """Split one document into overlapping chunks of roughly CHUNK_CHARS.
-
-    WHY CHUNK AT ALL? An embedding squeezes a piece of text into one point in
-    space. Squeeze a whole 10-page document into one point and it represents
-    everything vaguely and nothing precisely — a question about "documents
-    required" should match the *paragraph* about documents, not the whole PDF.
-
-    WHY OVERLAP? A hard cut can split a sentence ("...excluded if they paid" |
-    "income tax last year") so neither chunk carries the full fact. Each chunk
-    therefore starts with the tail of the previous one.
-
-    This is the crudest strategy (fixed size, paragraph-packed). Week 2 we
-    implement two smarter ones and let the eval numbers pick the winner.
-    """
-    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
-    chunks: list[str] = []
-    current = ""
-    for para in paragraphs:
-        if current and len(current) + len(para) > CHUNK_CHARS:
-            chunks.append(current.strip())
-            current = current[-OVERLAP_CHARS:]  # carry the tail forward
-        current += "\n\n" + para
-    if current.strip():
-        chunks.append(current.strip())
-    return chunks
+# --- Steps 1 & 2: loading + chunking — now in ingest/chunkers.py --------------
+# Week 1 implemented fixed-size chunking right here. Week 2 turned it into a
+# three-way experiment: the original code lives on as ingest.chunkers
+# .chunk_fixed (the baseline), alongside recursive and structure-aware
+# strategies, raced head-to-head by evals/compare_chunkers.py.
 
 
 # --- Step 3: embeddings -------------------------------------------------------
@@ -146,13 +108,14 @@ def build_index() -> None:
     if not docs:
         sys.exit("No documents found. Add .md/.txt files to data/samples or data/raw first.")
 
+    chunk_fn = CHUNKERS[CHUNK_STRATEGY]
     records = []
-    for doc_id, text in docs:
-        for i, chunk in enumerate(chunk_text(text)):
+    for doc_id, title, text in docs:
+        for i, chunk in enumerate(chunk_fn(text, title=title)):
             records.append({"doc_id": doc_id, "chunk_id": f"{doc_id}#{i}", "text": chunk})
 
     print(f"Embedding {len(records)} chunks from {len(docs)} documents "
-          f"with {EMBED_MODEL} ...")
+          f"with {EMBED_MODEL} ({CHUNK_STRATEGY} chunking) ...")
     embedder = get_embedder()
     vectors = embedder.encode([r["text"] for r in records],
                               normalize_embeddings=True, show_progress_bar=True)

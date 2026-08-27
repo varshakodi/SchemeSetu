@@ -47,3 +47,6 @@ For traps, set `answer` to `"REFUSE"` — the correct behaviour is to say "I don
    a new file, with old results marked as v1).
 2. End of every phase: run the full eval, append one row to `results.md`.
 3. Tune chunk sizes, retrieval, prompts using `dev_set.jsonl` only.
+4. Strategy experiments (e.g. `compare_chunkers.py`) build throwaway in-memory
+   indexes so the on-disk index and recorded results stay untouched until a
+   winner is chosen.
