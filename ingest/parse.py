@@ -54,7 +54,14 @@ def main() -> None:
         return
 
     for pdf in pdfs:
-        text, n_pages, thin = parse_pdf(pdf)
+        # One corrupt or truncated file must never kill the whole batch — parse
+        # failures are reported like any other quality problem, then skipped.
+        try:
+            text, n_pages, thin = parse_pdf(pdf)
+        except Exception as exc:
+            print(f"{pdf.name}: FAILED to parse ({type(exc).__name__}: {exc}) "
+                  f"— truncated download or corrupt file; re-fetch it. Skipping.")
+            continue
         out = pdf.with_suffix(".txt")
         header = (f"# Extracted from {pdf.name} ({n_pages} pages) on "
                   f"{datetime.date.today().isoformat()} by ingest/parse.py\n"
