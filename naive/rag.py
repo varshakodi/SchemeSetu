@@ -272,18 +272,11 @@ def generate_answer(query: str, hits: list[dict]) -> str:
     ("trap refusal rate") because a wrong eligibility answer costs a citizen
     real time and money.
     """
-    import anthropic  # imported lazily so retrieval-only use needs no API key
+    from agent.llm import get_llm  # lazy: retrieval-only use needs no provider
 
-    context = build_context(hits)
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model=GEN_MODEL,
-        max_tokens=1024,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user",
-                   "content": f"Context passages:\n\n{context}\n\nQuestion: {query}"}],
-    )
-    return "".join(block.text for block in response.content if block.type == "text")
+    return get_llm().complete(
+        SYSTEM_PROMPT,
+        f"Context passages:\n\n{build_context(hits)}\n\nQuestion: {query}")
 
 
 # --- CLI ----------------------------------------------------------------------
@@ -316,7 +309,8 @@ def main() -> None:
         print("feature, measured as 'trap refusal rate' in evals/results.md.")
         return
 
-    if os.environ.get("ANTHROPIC_API_KEY"):
+    from agent.llm import available_provider
+    if available_provider():
         print("-" * 60 + "\nAnswer:\n")
         print(generate_answer(args.question, hits))
         print("\nSources:")
@@ -324,8 +318,8 @@ def main() -> None:
             print(f"  [{i + 1}] {h['chunk_id']}")
     else:
         print("-" * 60)
-        print("(Retrieval only — no ANTHROPIC_API_KEY set. Export one to get a\n"
-              " grounded, cited answer generated from the chunks above.)")
+        print("(Retrieval only — no LLM provider configured. Free options and\n"
+              " setup: see agent/llm.py — Groq/Gemini keys need no card.)")
 
 
 if __name__ == "__main__":

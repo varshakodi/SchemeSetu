@@ -51,7 +51,6 @@ landing separately: build_graph already accepts a checkpointer for it.)
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from pathlib import Path
 from typing import TypedDict
@@ -62,27 +61,12 @@ sys.path.insert(0, str(ROOT))
 from langgraph.graph import END, START, StateGraph  # noqa: E402
 
 from naive.rag import (  # noqa: E402
-    GEN_MODEL, REFUSAL_THRESHOLD, SYSTEM_PROMPT, build_context, search,
+    REFUSAL_THRESHOLD, SYSTEM_PROMPT, build_context, search,
 )
+from agent.llm import get_llm  # noqa: E402  (the provider seam — see agent/llm.py)
 
 MAX_REWRITES = 1     # one rewrite-and-retry before refusing (PRD FR-5.1)
 MAX_REGENS = 1       # one regeneration after a failed grounding check
-
-
-# --- The LLM seam -------------------------------------------------------------
-
-class ClaudeLLM:
-    """Thin wrapper over the Anthropic SDK — the only place the API is called."""
-
-    def __init__(self) -> None:
-        import anthropic
-        self._client = anthropic.Anthropic()
-
-    def complete(self, system: str, user: str, max_tokens: int = 1024) -> str:
-        response = self._client.messages.create(
-            model=GEN_MODEL, max_tokens=max_tokens,
-            system=system, messages=[{"role": "user", "content": user}])
-        return "".join(b.text for b in response.content if b.type == "text").strip()
 
 
 # --- State --------------------------------------------------------------------
@@ -104,7 +88,7 @@ class AgentState(TypedDict, total=False):
 
 def build_graph(llm=None, checkpointer=None, retriever=None):
     """Wire the state machine. `llm` and `retriever` are injectable for tests."""
-    llm = llm if llm is not None else ClaudeLLM()
+    llm = llm if llm is not None else get_llm()
     retrieve_fn = retriever if retriever is not None else search
 
     def classify(state: AgentState) -> AgentState:
@@ -232,12 +216,7 @@ def main() -> None:
                      help="print the path taken through the graph")
     args = parser.parse_args()
 
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        sys.exit("The agent's classify/rewrite/generate/verify nodes are LLM calls "
-                 "— set ANTHROPIC_API_KEY to run it. (Retrieval-only: naive/rag.py; "
-                 "offline wiring tests: pytest tests/test_agent.py)")
-
-    app = build_graph()
+    app = build_graph()  # exits with provider setup guidance if none configured
     state = app.invoke({"question": args.question, "path": []})
 
     if args.trace:
