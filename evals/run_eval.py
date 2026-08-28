@@ -57,7 +57,9 @@ def evaluate(path: Path) -> None:
     for r in answerable:
         results = search(r["question"], k=K_MRR)
         doc_ids = [h["doc_id"] for h in results]
-        ans_top_scores.append(results[0]["score"])
+        # `cosine` is comparable across retrieval modes; hybrid's own `score`
+        # is an RRF sum on a different scale.
+        ans_top_scores.append(results[0]["cosine"])
 
         gold_rank = next((i + 1 for i, d in enumerate(doc_ids)
                           if d in r["gold_doc_ids"]), None)
@@ -70,8 +72,8 @@ def evaluate(path: Path) -> None:
     trap_top_scores = []
     for r in traps:
         results = search(r["question"], k=1)
-        trap_top_scores.append(results[0]["score"])
-        print(f"  [TRAP] top1_score={results[0]['score']:.3f}  {r['id']}  {r['question'][:60]}")
+        trap_top_scores.append(results[0]["cosine"])
+        print(f"  [TRAP] top1_cos={results[0]['cosine']:.3f}  {r['id']}  {r['question'][:60]}")
 
     print(f"\n  hit@{K_HIT}  = {hits}/{len(answerable)} = {hits / len(answerable):.2f}"
           if answerable else "  (no answerable questions)")

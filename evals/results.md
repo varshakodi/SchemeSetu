@@ -7,7 +7,7 @@ Targets (PRD §5): hit@5 ≥ 0.85 · faithfulness ≥ 0.90 · trap refusal ≥ 0
 |---|---|---|---|---|---|---|---|---|
 | 1 — naive (fixed chunks, MiniLM, cosine) | 2026-08-27 | 1.00* | 1.000* | — | — | — | — | *starter golden set only (2 answerable + 1 trap) — far too small to trust; grow to 55 q and re-run. LLM-judge metrics pending API key. Corpus: 81 chunks / 18 docs. Trap vs answerable top-1 score: golden 0.48 vs 0.61; dev 0.35 vs 0.64. First ranking slip on dev set (MRR 0.929): NMMSS gold doc at rank 2, outranked by the other scholarship doc — scholarship-vs-scholarship confusion, a reranker target. |
 | 2 — chunking experiments | 2026-08-27 | 1.00 | 1.000 | — | — | — | — | winner: structure-aware + cleaning (decisions 006). Dev MRR 0.929 → 1.000 (fixed the NMMSS scholarship confusion); mid-word chunk starts 65% → 0%; trap-vs-answerable gap widened to 0.33 vs 0.66 (dev). Recursive alone *hurt* MRR (0.905). Corpus 116 chunks / 18 docs. Gold labels corrected (007). |
-| 3 — hybrid (BM25 + dense + RRF) | | | | | | | | |
+| 3 — hybrid (BM25 + dense + RRF) | 2026-08-28 | 1.00 | 1.000 | — | — | — | — | Dev set hardened to v2 (16 q; old one was saturated). On dev v2: dense (wk-2 config) hit@5 0.93/MRR 0.940 → hybrid hit@5 **1.00**/MRR 0.917. Complementary failures confirmed: BM25 lost the paraphrase (rank >10), dense lost the synthesis query (rank 6), hybrid missed nothing. MRR dip = rank-fusion dilution — wk-4 reranker's job. Trap gap 0.34 vs 0.60 (cosine). BM25 hand-built; Qdrant deferred (decisions 008–009). |
 | 4 — reranker + citations | | | | | | | | |
 | 5 — LangGraph agent | | | | | | | | |
 | 6 — Hindi (BGE-M3 vs translate) | | | | | | | | winner: ___ |
