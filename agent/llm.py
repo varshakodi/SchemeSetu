@@ -45,11 +45,14 @@ from naive.rag import GEN_MODEL  # noqa: E402  (the anthropic-provider default)
 
 PROVIDERS: dict[str, dict] = {
     "anthropic": {"key_env": "ANTHROPIC_API_KEY", "model": GEN_MODEL},
-    "groq": {"key_env": "GROQ_API_KEY", "model": "llama-3.3-70b-versatile",
+    # Model ids verified against the live catalogs on 2026-08-29 — they WILL
+    # drift again; when a provider 404s, list its models (see decisions 013)
+    # and update here, or override instantly with LLM_MODEL=...
+    "groq": {"key_env": "GROQ_API_KEY", "model": "openai/gpt-oss-120b",
              "base_url": "https://api.groq.com/openai/v1"},
-    "gemini": {"key_env": "GEMINI_API_KEY", "model": "gemini-2.0-flash",
+    "gemini": {"key_env": "GEMINI_API_KEY", "model": "gemini-3.6-flash",
                "base_url": "https://generativelanguage.googleapis.com/v1beta/openai"},
-    "cerebras": {"key_env": "CEREBRAS_API_KEY", "model": "llama-3.3-70b",
+    "cerebras": {"key_env": "CEREBRAS_API_KEY", "model": "gpt-oss-120b",  # unverified (no key)
                  "base_url": "https://api.cerebras.ai/v1"},
     "ollama": {"key_env": None, "model": "llama3.2",
                "base_url": "http://localhost:11434/v1"},
@@ -67,13 +70,19 @@ class OpenAICompatLLM:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+        # Floor the token budget: reasoning models (e.g. gpt-oss) spend tokens
+        # thinking BEFORE the visible answer — a tiny cap yields empty content.
         resp = httpx.post(
             f"{self.base_url}/chat/completions", headers=headers, timeout=120,
-            json={"model": self.model, "max_tokens": max_tokens,
+            json={"model": self.model, "max_tokens": max(max_tokens, 512),
                   "messages": [{"role": "system", "content": system},
                                {"role": "user", "content": user}]})
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip()
+        if resp.status_code >= 400:
+            # Status codes alone don't debug anything — surface the body.
+            raise RuntimeError(
+                f"{self.base_url} returned {resp.status_code}: {resp.text[:400]}")
+        message = resp.json()["choices"][0]["message"]
+        return (message.get("content") or "").strip()
 
 
 class ClaudeLLM:

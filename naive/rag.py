@@ -254,7 +254,9 @@ Answer ONLY from the numbered context passages provided. After each factual
 claim, cite the passage it came from, like [1] or [2].
 If the passages do not contain the answer, say plainly that you don't know and
 suggest what the user could ask instead. Never guess or use outside knowledge.
-Answer in the same language as the question."""
+Answer in the language the question was asked in (an English question gets an
+English answer, a Hindi question gets a Hindi answer), regardless of the
+language of the scheme names involved."""
 
 
 def build_context(hits: list[dict]) -> str:
