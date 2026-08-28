@@ -59,6 +59,12 @@ EMBED_MODEL = "all-MiniLM-L6-v2"
 CHUNK_STRATEGY = "structure"
 TOP_K = 4              # how many chunks we retrieve for the LLM
 
+# Retrieval mode: "dense" (embeddings only), "bm25" (keywords only), or
+# "hybrid" (both, fused). Hybrid won Week 3 on hit@5 (the recall metric a
+# downstream LLM cannot recover from) — decisions.md 009 has the numbers.
+RETRIEVAL_MODE = "hybrid"
+RRF_K = 60             # Reciprocal Rank Fusion constant (standard value)
+
 # Generation model — Claude Haiku 4.5: the cheap/fast tier, good grounding.
 # Chosen in PRD §8; per-query cost matters for a student project.
 GEN_MODEL = "claude-haiku-4-5"
@@ -128,15 +134,42 @@ def build_index() -> None:
 
 # --- Step 4: retrieval --------------------------------------------------------
 
-def search(query: str, k: int = TOP_K) -> list[dict]:
-    """Embed the question and return the k most similar chunks.
+_bm25 = None
 
-    `vectors @ q` computes the dot product of the query against EVERY chunk
-    vector at once — brute force over the whole corpus. That's fine for a few
-    hundred chunks. Making this fast at millions of vectors (and adding
-    filters, persistence, sharding) is precisely the job of a vector database
-    like Qdrant — which is why we adopt one in Week 3, and not before.
+
+def _get_bm25(records: list[dict]):
+    """Build the BM25 index over chunk texts once per process, then reuse it."""
+    global _bm25
+    if _bm25 is None:
+        from naive.bm25 import BM25
+        _bm25 = BM25([r["text"] for r in records])
+    return _bm25
+
+
+def search(query: str, k: int = TOP_K, mode: str | None = None) -> list[dict]:
+    """Return the k best chunks for the query, by one of three retrieval modes.
+
+    dense   Embed the query; rank chunks by cosine similarity (`vectors @ q`
+            is a brute-force dot product against every chunk — a vector
+            database like Qdrant is the scale-out version of this line).
+            Strong on paraphrase ("money for my baby" ~ "maternity benefit"),
+            weak on names and abbreviations.
+
+    bm25    Rank by keyword relevance (see naive/bm25.py). Strong on exact
+            names ("NMMSS", "PMSBY premium"), blind to meaning.
+
+    hybrid  Run both, then merge with Reciprocal Rank Fusion (RRF): each
+            chunk earns 1/(60 + rank) from each list that ranked it, and we
+            sort by the sum. We fuse RANKS, not scores, because the two score
+            scales are incomparable (cosine lives in [-1, 1]; BM25 is
+            unbounded) — rank is the only common currency. A chunk that both
+            retrievers like rises to the top; a chunk only one retriever
+            loves still makes the list.
+
+    Every result carries `cosine` (comparable across modes — used for the
+    refusal-threshold analysis) alongside the mode's own `score`.
     """
+    mode = mode or RETRIEVAL_MODE
     if not INDEX_FILE.exists():
         sys.exit("No index found. Run:  python naive/rag.py index")
 
@@ -144,9 +177,28 @@ def search(query: str, k: int = TOP_K) -> list[dict]:
     records = json.loads(CHUNKS_FILE.read_text())
 
     q = get_embedder().encode([query], normalize_embeddings=True)[0]
-    scores = vectors @ q                       # cosine similarity to every chunk
-    top = np.argsort(scores)[::-1][:k]         # indices of the k best scores
-    return [{**records[i], "score": float(scores[i])} for i in top]
+    cosine = vectors @ q
+    dense_rank = list(np.argsort(cosine)[::-1])
+
+    if mode == "dense":
+        order, mode_scores = dense_rank[:k], cosine
+    else:
+        bm25_scores = np.array(_get_bm25(records).scores(query))
+        bm25_rank = list(np.argsort(bm25_scores)[::-1])
+        if mode == "bm25":
+            order, mode_scores = bm25_rank[:k], bm25_scores
+        elif mode == "hybrid":
+            fused: dict[int, float] = {}
+            for ranking in (dense_rank[:50], bm25_rank[:50]):
+                for rank, idx in enumerate(ranking):
+                    fused[int(idx)] = fused.get(int(idx), 0.0) + 1.0 / (RRF_K + rank + 1)
+            order = sorted(fused, key=fused.get, reverse=True)[:k]
+            mode_scores = fused
+        else:
+            sys.exit(f"Unknown retrieval mode: {mode!r}")
+
+    return [{**records[int(i)], "score": float(mode_scores[int(i)]),
+             "cosine": float(cosine[int(i)])} for i in order]
 
 
 # --- Step 5: grounded generation ----------------------------------------------
@@ -191,17 +243,19 @@ def main() -> None:
     sub.add_parser("index", help="chunk + embed all documents, save the index")
     ask = sub.add_parser("ask", help="retrieve chunks for a question (and answer, if key set)")
     ask.add_argument("question")
+    ask.add_argument("--mode", choices=["dense", "bm25", "hybrid"], default=None,
+                     help=f"retrieval mode (default: {RETRIEVAL_MODE})")
     args = parser.parse_args()
 
     if args.command == "index":
         build_index()
         return
 
-    hits = search(args.question)
+    hits = search(args.question, mode=args.mode)
     print(f"\nTop {len(hits)} retrieved chunks for: {args.question!r}\n" + "-" * 60)
     for i, h in enumerate(hits):
         preview = " ".join(h["text"].split())[:160]
-        print(f"[{i+1}] score={h['score']:.3f}  {h['doc_id']}\n    {preview}...\n")
+        print(f"[{i+1}] score={h['score']:.3f} cos={h['cosine']:.3f}  {h['doc_id']}\n    {preview}...\n")
 
     if os.environ.get("ANTHROPIC_API_KEY"):
         print("-" * 60 + "\nAnswer:\n")
