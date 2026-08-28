@@ -257,6 +257,12 @@ suggest what the user could ask instead. Never guess or use outside knowledge.
 Answer in the same language as the question."""
 
 
+def build_context(hits: list[dict]) -> str:
+    """Number the retrieved chunks — the numbering is what citations refer to."""
+    return "\n\n".join(f"[{i + 1}] (source: {h['doc_id']})\n{h['text']}"
+                       for i, h in enumerate(hits))
+
+
 def generate_answer(query: str, hits: list[dict]) -> str:
     """Ask Claude to answer strictly from the retrieved chunks.
 
@@ -268,8 +274,7 @@ def generate_answer(query: str, hits: list[dict]) -> str:
     """
     import anthropic  # imported lazily so retrieval-only use needs no API key
 
-    context = "\n\n".join(f"[{i+1}] (source: {h['doc_id']})\n{h['text']}"
-                          for i, h in enumerate(hits))
+    context = build_context(hits)
     client = anthropic.Anthropic()
     response = client.messages.create(
         model=GEN_MODEL,
