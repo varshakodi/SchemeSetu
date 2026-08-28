@@ -65,6 +65,26 @@ TOP_K = 4              # how many chunks we retrieve for the LLM
 RETRIEVAL_MODE = "hybrid"
 RRF_K = 60             # Reciprocal Rank Fusion constant (standard value)
 
+# Reranking (Week 4). Embedding retrieval is a "bi-encoder": query and chunks
+# are embedded INDEPENDENTLY, so similarity is approximate. A CROSS-encoder
+# reads (query, chunk) together as one input and scores that exact pair —
+# far more precise, far too slow to run on every chunk. Two-stage pattern:
+# hybrid retrieval nominates RERANK_POOL candidates (recall), the
+# cross-encoder re-orders them (precision). ms-marco-MiniLM is small (~80 MB)
+# and English-only — swapped for BAAI/bge-reranker-v2-m3 in Week 6 alongside
+# the embedder (same play as decisions.md 002).
+RERANK = True
+RERANK_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+RERANK_POOL = 20
+
+# Refusal (Week 4): if even the BEST reranked chunk scores below this, the
+# corpus does not contain the answer — refuse instead of letting an LLM
+# improvise. Tuned on dev-set traps; method and margin in decisions.md 011.
+# Scale: cross-encoder logits (unbounded), not cosine.
+REFUSAL_THRESHOLD = 1.5  # midpoint-ish of the dev gap: best trap +0.48,
+                         # next answerable +3.10 (decisions.md 011; the one
+                         # known false refusal, dev-012, is Week 5's job)
+
 # Generation model — Claude Haiku 4.5: the cheap/fast tier, good grounding.
 # Chosen in PRD §8; per-query cost matters for a student project.
 GEN_MODEL = "claude-haiku-4-5"
@@ -146,7 +166,20 @@ def _get_bm25(records: list[dict]):
     return _bm25
 
 
-def search(query: str, k: int = TOP_K, mode: str | None = None) -> list[dict]:
+_reranker = None
+
+
+def _get_reranker():
+    """Load the cross-encoder once per process (~80 MB download on first run)."""
+    global _reranker
+    if _reranker is None:
+        from sentence_transformers import CrossEncoder
+        _reranker = CrossEncoder(RERANK_MODEL)
+    return _reranker
+
+
+def search(query: str, k: int = TOP_K, mode: str | None = None,
+           rerank: bool | None = None) -> list[dict]:
     """Return the k best chunks for the query, by one of three retrieval modes.
 
     dense   Embed the query; rank chunks by cosine similarity (`vectors @ q`
@@ -166,10 +199,13 @@ def search(query: str, k: int = TOP_K, mode: str | None = None) -> list[dict]:
             retrievers like rises to the top; a chunk only one retriever
             loves still makes the list.
 
-    Every result carries `cosine` (comparable across modes — used for the
-    refusal-threshold analysis) alongside the mode's own `score`.
+    With rerank on (the default), the mode above only NOMINATES a pool of
+    RERANK_POOL candidates; the cross-encoder then re-scores each (query,
+    chunk) pair and the top k by that score are returned, each carrying a
+    `rerank` field. `cosine` is always present (comparable across configs).
     """
     mode = mode or RETRIEVAL_MODE
+    rerank = RERANK if rerank is None else rerank
     if not INDEX_FILE.exists():
         sys.exit("No index found. Run:  python naive/rag.py index")
 
@@ -180,25 +216,35 @@ def search(query: str, k: int = TOP_K, mode: str | None = None) -> list[dict]:
     cosine = vectors @ q
     dense_rank = list(np.argsort(cosine)[::-1])
 
+    pool_n = max(k, RERANK_POOL) if rerank else k
+
     if mode == "dense":
-        order, mode_scores = dense_rank[:k], cosine
+        order, mode_scores = dense_rank[:pool_n], cosine
     else:
         bm25_scores = np.array(_get_bm25(records).scores(query))
         bm25_rank = list(np.argsort(bm25_scores)[::-1])
         if mode == "bm25":
-            order, mode_scores = bm25_rank[:k], bm25_scores
+            order, mode_scores = bm25_rank[:pool_n], bm25_scores
         elif mode == "hybrid":
             fused: dict[int, float] = {}
             for ranking in (dense_rank[:50], bm25_rank[:50]):
                 for rank, idx in enumerate(ranking):
                     fused[int(idx)] = fused.get(int(idx), 0.0) + 1.0 / (RRF_K + rank + 1)
-            order = sorted(fused, key=fused.get, reverse=True)[:k]
+            order = sorted(fused, key=fused.get, reverse=True)[:pool_n]
             mode_scores = fused
         else:
             sys.exit(f"Unknown retrieval mode: {mode!r}")
 
+    if rerank:
+        pool = order[:RERANK_POOL]
+        pair_scores = _get_reranker().predict(
+            [(query, records[int(i)]["text"]) for i in pool])
+        ranked = sorted(zip(pool, pair_scores), key=lambda t: -t[1])[:k]
+        return [{**records[int(i)], "score": float(s), "rerank": float(s),
+                 "cosine": float(cosine[int(i)])} for i, s in ranked]
+
     return [{**records[int(i)], "score": float(mode_scores[int(i)]),
-             "cosine": float(cosine[int(i)])} for i in order]
+             "cosine": float(cosine[int(i)])} for i in order[:k]]
 
 
 # --- Step 5: grounded generation ----------------------------------------------
@@ -257,9 +303,20 @@ def main() -> None:
         preview = " ".join(h["text"].split())[:160]
         print(f"[{i+1}] score={h['score']:.3f} cos={h['cosine']:.3f}  {h['doc_id']}\n    {preview}...\n")
 
+    if hits and hits[0].get("rerank") is not None and hits[0]["rerank"] < REFUSAL_THRESHOLD:
+        print("-" * 60)
+        print(f"REFUSING to answer: the best evidence scores {hits[0]['rerank']:.2f}, "
+              f"below the refusal threshold ({REFUSAL_THRESHOLD:.2f}).")
+        print("The corpus most likely does not contain this answer — refusing is a")
+        print("feature, measured as 'trap refusal rate' in evals/results.md.")
+        return
+
     if os.environ.get("ANTHROPIC_API_KEY"):
         print("-" * 60 + "\nAnswer:\n")
         print(generate_answer(args.question, hits))
+        print("\nSources:")
+        for i, h in enumerate(hits):
+            print(f"  [{i + 1}] {h['chunk_id']}")
     else:
         print("-" * 60)
         print("(Retrieval only — no ANTHROPIC_API_KEY set. Export one to get a\n"
