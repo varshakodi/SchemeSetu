@@ -79,9 +79,13 @@ python naive/rag.py index     # chunk + embed the corpus
 python naive/rag.py ask "Who is eligible for PM-KISAN?"
 ```
 
-Retrieval runs fully offline. To generate grounded, cited answers, set
-`ANTHROPIC_API_KEY`. Run the eval suite with `python evals/run_eval.py`, and
-the unit tests with `pytest`.
+Retrieval runs fully offline. Generating grounded, cited answers needs an LLM
+provider — **including fully free options** (Groq, Gemini, Cerebras free
+tiers, or a local Ollama): set the matching key env var and everything picks
+it up automatically via the provider seam in [`agent/llm.py`](agent/llm.py)
+(`LLM_PROVIDER` forces a choice; `ANTHROPIC_API_KEY` enables the PRD-default
+Claude). Run the eval suite with `python evals/run_eval.py`, and the unit
+tests with `pytest`.
 
 ## Roadmap
 
