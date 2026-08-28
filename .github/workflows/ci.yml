@@ -1,0 +1,21 @@
+# Runs the fast unit tests on every push and pull request.
+# Deliberately lightweight: no ML model downloads — the tests cover the pure
+# algorithmic pieces (BM25 math, chunking, cleaning) so CI stays under a
+# minute. The embedding/eval pipeline runs locally where the model cache lives.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pytest numpy pypdf
+      - run: pytest tests/ -q

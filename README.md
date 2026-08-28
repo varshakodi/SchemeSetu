@@ -1,55 +1,120 @@
 # SchemeSetu
 
-Bilingual (English/Hindi) RAG assistant for Indian government schemes — grounded
-answers with per-claim citations, honest refusal when the corpus doesn't know,
-and published eval numbers. Built as an 8-week learning project; the full spec
-lives in [PRD.md](PRD.md).
+**Ask about Indian government schemes in plain language — get answers grounded in official documents, with citations, or an honest "I don't know."**
 
-**Status: Week 1** — naive RAG from scratch (no frameworks), sample corpus,
-golden-set scaffolding.
+[![CI](https://github.com/varshakodi/SchemeSetu/actions/workflows/ci.yml/badge.svg)](https://github.com/varshakodi/SchemeSetu/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Evals](https://img.shields.io/badge/evals-tracked_every_phase-orange.svg)](evals/results.md)
 
-## Why this exists, and what's different
+SchemeSetu is a bilingual (English/Hindi) retrieval-augmented generation (RAG)
+system over official Indian government scheme documents — PM-KISAN, PMAY-G,
+Ayushman Bharat, scholarships, pensions and more. It is built
+**evaluation-first**: every architectural choice (chunking strategy, retrieval
+mode, reranking) is decided by measured before/after numbers on a frozen
+question set, and every decision is recorded with its evidence in
+[`decisions.md`](decisions.md).
 
-Tools in this space exist — myScheme's browse/filter portal, Yojana AI, and
-per-scheme government chatbots (PM-KISAN's assistant, Ayushman Sarathi).
-SchemeSetu differs in three deliberate ways:
+## Why this exists
 
-1. **Per-claim citations** to the exact source passage, so answers are verifiable.
-2. **Measured honest refusal** — out-of-corpus questions get "I don't know",
-   and the refusal rate is a tracked metric, because a wrong eligibility answer
-   costs a citizen real time and money.
-3. **A public eval report** — a frozen 55-question golden set, re-run after
-   every build phase, with before/after numbers in [evals/results.md](evals/results.md).
+- **3,000+ schemes, buried in PDFs.** Eligibility rules, benefit amounts and
+  document checklists live in circulars written in bureaucratic language,
+  scattered across dozens of portals.
+- **Wrong answers cost real money.** A citizen acting on a hallucinated
+  eligibility rule wastes application fees and weeks of effort. Grounding,
+  per-claim citations and *measured* refusal are therefore first-class
+  requirements here — not nice-to-haves.
+- **Existing tools don't cite.** myScheme offers browse/filter; per-scheme
+  chatbots exist (PM-KISAN's assistant, Ayushman Sarathi). SchemeSetu differs
+  in three ways: citations to the exact source passage, a tracked
+  honest-refusal rate on out-of-corpus questions, and a public eval report.
+
+## How it works
+
+```mermaid
+flowchart LR
+    Q[Question] --> D[Dense retrieval\nMiniLM embeddings]
+    Q --> B[BM25 keyword retrieval\nbuilt from scratch]
+    D --> F[Reciprocal\nRank Fusion]
+    B --> F
+    F --> R[Cross-encoder rerank\ntop 20 to top 5]
+    R --> T{Confidence\nthreshold}
+    T -->|above| G[Claude generates\ncited answer]
+    T -->|below| N[Honest refusal]
+```
+
+Every stage is implemented **from scratch first** (see [`naive/`](naive/) —
+embedding search in plain NumPy, BM25 in ~60 lines) before any framework, so
+the repository doubles as a working tutorial on how RAG actually works under
+the hood. Frameworks (LangChain/LangGraph) enter only where they earn their
+keep — see the roadmap.
+
+## Evaluation-driven development
+
+Retrieval quality on the dev set (v2, 16 questions — keyword, paraphrase,
+synthesis and trap types):
+
+| Retrieval mode | hit@5 | MRR@10 |
+|---|---|---|
+| Dense embeddings only | 0.93 | 0.940 |
+| BM25 only | 0.93 | 0.929 |
+| **Hybrid — dense + BM25, RRF fusion (shipped)** | **1.00** | 0.917 |
+
+The two retrievers fail in complementary ways — BM25 cannot find a paraphrase
+with zero word overlap; embeddings blur exact names — and fusion covers both.
+The full phase-by-phase table, including trap-refusal analysis, lives in
+[`evals/results.md`](evals/results.md). The methodology (frozen golden set,
+separate dev set, metric definitions) is documented in
+[`evals/README.md`](evals/README.md).
 
 ## Quickstart
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+git clone https://github.com/varshakodi/SchemeSetu.git && cd SchemeSetu
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-python naive/rag.py index                                   # build the index
-python naive/rag.py ask "Who is not eligible for PM-KISAN?" # retrieve
-export ANTHROPIC_API_KEY=sk-ant-...                         # optional: enables answers
-python naive/rag.py ask "Who is not eligible for PM-KISAN?" # retrieve + grounded answer
+python ingest/parse.py        # extract text from any PDFs in data/raw
+python naive/rag.py index     # chunk + embed the corpus
+python naive/rag.py ask "Who is eligible for PM-KISAN?"
 ```
 
-Retrieval runs fully offline; only answer generation needs an API key.
+Retrieval runs fully offline. To generate grounded, cited answers, set
+`ANTHROPIC_API_KEY`. Run the eval suite with `python evals/run_eval.py`, and
+the unit tests with `pytest`.
 
-## Layout
+## Roadmap
+
+| Phase | Focus | Status |
+|---|---|---|
+| 1 | Corpus, provenance registry, naive RAG baseline, eval harness | ✅ |
+| 2 | Chunking experiments — structure-aware chunks won | ✅ |
+| 3 | Hybrid retrieval (dense + hand-built BM25 + RRF) | ✅ |
+| 4 | Cross-encoder reranking, citations, refusal threshold | 🔄 |
+| 5 | LangGraph agent (routing, evidence grading, self-check) | ⏳ |
+| 6 | Hindi (BGE-M3 cross-lingual vs translate-then-retrieve A/B) | ⏳ |
+| 7 | Deployment + tracing | ⏳ |
+| 8 | Full eval report, 55-question frozen golden set | ⏳ |
+
+Full product requirements: [`PRD.md`](PRD.md)
+
+## Repository layout
 
 ```
-PRD.md            product requirements — the contract for this build
-decisions.md      decision log (why each technical choice was made)
-naive/rag.py      Week 1: the whole RAG pipeline, from scratch, heavily commented
-data/samples/     placeholder scheme documents (replaced by the real corpus in Week 1)
-data/raw/         the real corpus (gitignored; see data registry once built)
-evals/            golden set, dev set, metric definitions, results table
+PRD.md              product requirements — the contract for this build
+decisions.md        every technical decision, with alternatives and evidence
+naive/              from-scratch implementations: RAG pipeline, BM25
+ingest/             corpus loading, cleaning, chunking strategies, PDF parsing
+data/registry.csv   provenance for every corpus document (source, date, status)
+evals/              golden/dev sets, metric definitions, per-phase results
+tests/              unit tests (run in CI)
 ```
 
-## Eval philosophy
+The corpus itself is not committed — it is rebuildable from the source URLs
+in the registry, which also records how complete each captured document is.
 
-The golden set is written from the documents **before** retrieval is tuned,
-then frozen — tuning happens on a separate dev set. Every phase of the build
-appends one row of metrics to `evals/results.md`. If a number isn't in that
-table, the improvement didn't happen.
+## License
+
+[MIT](LICENSE) — the corpus documents are Government of India publications
+accessed from public portals; see `data/registry.csv` for per-document
+provenance.
