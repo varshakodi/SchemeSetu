@@ -66,17 +66,31 @@ class OpenAICompatLLM:
         self.base_url, self.api_key, self.model = base_url.rstrip("/"), api_key, model
 
     def complete(self, system: str, user: str, max_tokens: int = 1024) -> str:
+        import time
         import httpx
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         # Floor the token budget: reasoning models (e.g. gpt-oss) spend tokens
         # thinking BEFORE the visible answer — a tiny cap yields empty content.
-        resp = httpx.post(
-            f"{self.base_url}/chat/completions", headers=headers, timeout=120,
-            json={"model": self.model, "max_tokens": max(max_tokens, 512),
-                  "messages": [{"role": "system", "content": system},
-                               {"role": "user", "content": user}]})
+        payload = {"model": self.model, "max_tokens": max(max_tokens, 512),
+                   "messages": [{"role": "system", "content": system},
+                                {"role": "user", "content": user}]}
+        for attempt in range(4):
+            resp = httpx.post(f"{self.base_url}/chat/completions",
+                              headers=headers, timeout=120, json=payload)
+            if resp.status_code == 429 and attempt < 3:
+                # HTTP 429 comes in two species. A per-minute meter says
+                # "slow down" — waiting works. A DAILY quota says "come back
+                # tomorrow" — retrying is hopeless and stalls the caller for
+                # minutes before its fallback can engage. Distinguish them:
+                # a long Retry-After or an explicit quota message = terminal.
+                wait = float(resp.headers.get("retry-after", 5 * (attempt + 1)))
+                if wait > 30 or "quota" in resp.text.lower():
+                    break  # terminal — raise below so callers can fall back
+                time.sleep(wait)
+                continue
+            break
         if resp.status_code >= 400:
             # Status codes alone don't debug anything — surface the body.
             raise RuntimeError(

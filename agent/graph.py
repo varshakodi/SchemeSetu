@@ -131,8 +131,13 @@ def build_graph(llm=None, checkpointer=None, retriever=None):
                 "path": state["path"] + [f"rewrite({new_q[:40]!r})"]}
 
     def generate(state: AgentState) -> AgentState:
+        # Second refusal layer: the retrieval threshold judges TOPICAL
+        # closeness, but near-miss chunks (PMAY-G for a PMAY-Urban question)
+        # can score high while lacking the actual answer. The generator reads
+        # the content, so it gets a machine-readable way to say so.
         answer = llm.complete(
-            SYSTEM_PROMPT,
+            SYSTEM_PROMPT + "\nIf the passages do not contain the answer to "
+            "this question, reply with exactly NO_ANSWER and nothing else.",
             f"Context passages:\n\n{build_context(state['hits'])}\n\n"
             f"Question: {state['question']}")
         return {"answer": answer, "regens": state.get("regens", 0),
@@ -143,7 +148,9 @@ def build_graph(llm=None, checkpointer=None, retriever=None):
         verdict = llm.complete(
             "You are a strict fact-checker. Given context passages and an answer, "
             "reply PASS if every factual claim in the answer is supported by the "
-            "context, otherwise reply FAIL followed by the unsupported claim.",
+            "context AND the answer addresses the question it claims to answer. "
+            "Reply FAIL (plus the reason) if any claim is unsupported, or if the "
+            "answer is about a different scheme than the one asked about.",
             f"Context:\n{build_context(state['hits'])}\n\nAnswer:\n{state['answer']}",
             max_tokens=100)
         ok = verdict.strip().upper().startswith("PASS")
@@ -160,6 +167,9 @@ def build_graph(llm=None, checkpointer=None, retriever=None):
     def refuse(state: AgentState) -> AgentState:
         if state.get("label") == "out_of_domain":
             why = "That is outside what I cover — Indian government welfare schemes."
+        elif state.get("answer", "").strip().upper().startswith("NO_ANSWER"):
+            why = ("The documents I found are topically close, but none of them "
+                   "actually contains this answer.")
         else:
             why = (f"The best evidence I found scores {state.get('evidence', 0):+.2f}, "
                    f"below my confidence threshold ({REFUSAL_THRESHOLD}), even after "
@@ -176,6 +186,11 @@ def build_graph(llm=None, checkpointer=None, retriever=None):
         if state["evidence"] >= REFUSAL_THRESHOLD:
             return "strong"
         return "retry" if state.get("rewrites", 0) < MAX_REWRITES else "give_up"
+
+    def route_generated(state: AgentState) -> str:
+        if state["answer"].strip().upper().startswith("NO_ANSWER"):
+            return "no_answer"
+        return "verify"
 
     def route_verified(state: AgentState) -> str:
         if "response" in state and state["response"]:
@@ -196,7 +211,8 @@ def build_graph(llm=None, checkpointer=None, retriever=None):
     g.add_conditional_edges("retrieve", route_evidence, {
         "strong": "generate", "retry": "rewrite", "give_up": "refuse"})
     g.add_edge("rewrite", "retrieve")
-    g.add_edge("generate", "verify")
+    g.add_conditional_edges("generate", route_generated, {
+        "no_answer": "refuse", "verify": "verify"})
     g.add_conditional_edges("verify", route_verified, {
         "done": END, "regen": "generate", "give_up": "refuse"})
     g.add_edge("direct_reply", END)

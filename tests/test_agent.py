@@ -84,6 +84,17 @@ def test_weak_twice_refuses_honestly():
     assert sum(step.startswith("retrieve") for step in state["path"]) == 2  # tried twice
 
 
+def test_generation_no_answer_routes_to_real_refusal():
+    """Threshold passed but content missing: generator says NO_ANSWER and the
+    graph must produce a true refusal — no decorative Sources footer."""
+    llm = ScriptedLLM({"Classify": "in_domain",
+                       "SchemeSetu, an assistant for Indian government schemes.\nAnswer ONLY": "NO_ANSWER"})
+    state = run(llm, fake_retriever({"q?": STRONG}))
+    assert "don't know" in state["response"]
+    assert "Sources:" not in state["response"]
+    assert "topically close" in state["response"]
+
+
 def test_failed_grounding_regenerates_then_refuses():
     llm = ScriptedLLM({"Classify": "in_domain",
                        "SchemeSetu, an assistant for Indian government schemes.\nAnswer ONLY": "Made-up claim [1].",
