@@ -87,18 +87,6 @@ it up automatically via the provider seam in [`agent/llm.py`](agent/llm.py)
 Claude). Run the eval suite with `python evals/run_eval.py`, and the unit
 tests with `pytest`.
 
-## Roadmap
-
-| Phase | Focus | Status |
-|---|---|---|
-| 1 | Corpus, provenance registry, naive RAG baseline, eval harness | ✅ |
-| 2 | Chunking experiments — structure-aware chunks won | ✅ |
-| 3 | Hybrid retrieval (dense + hand-built BM25 + RRF) | ✅ |
-| 4 | Cross-encoder reranking, citations, refusal threshold | 🔄 |
-| 5 | LangGraph agent (routing, evidence grading, self-check) | ⏳ |
-| 6 | Hindi (BGE-M3 cross-lingual vs translate-then-retrieve A/B) | ⏳ |
-| 7 | Deployment + tracing | ⏳ |
-| 8 | Full eval report, 55-question frozen golden set | ⏳ |
 
 Full product requirements: [`PRD.md`](PRD.md)
 
