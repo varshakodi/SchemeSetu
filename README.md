@@ -33,7 +33,7 @@ question set, and every decision is recorded with its evidence in
 
 ```mermaid
 flowchart LR
-    Q[Question] --> D[Dense retrieval\nMiniLM embeddings]
+    Q[Question] --> D[Dense retrieval\nBGE-M3 multilingual]
     Q --> B[BM25 keyword retrieval\nbuilt from scratch]
     D --> F[Reciprocal\nRank Fusion]
     B --> F

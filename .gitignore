@@ -13,3 +13,6 @@ data/raw/
 # generated index artifacts (rebuilt with `python naive/rag.py index`)
 naive/index.npz
 naive/chunks.json
+
+# deployment bundle (rebuilt with `python deploy/build_space.py`)
+deploy/space_bundle/

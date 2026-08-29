@@ -6,3 +6,4 @@ anthropic==1.0.0
 pypdf==6.16.2
 pytest==9.1.1
 langgraph==1.2.11
+streamlit==1.62.0
