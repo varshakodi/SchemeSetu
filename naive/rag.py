@@ -49,10 +49,11 @@ from ingest.chunkers import CHUNKERS, load_documents  # noqa: E402
 INDEX_FILE = Path(__file__).resolve().parent / "index.npz"
 CHUNKS_FILE = Path(__file__).resolve().parent / "chunks.json"
 
-# Embedding model. all-MiniLM-L6-v2 is small (~90 MB), fast on CPU, English-only.
-# Week 6 we swap this single line to "BAAI/bge-m3" (multilingual, ~2 GB) for
-# Hindi — and measure what that changes. See decisions.md entry 002.
-EMBED_MODEL = "all-MiniLM-L6-v2"
+# Embedding model — BGE-M3 (multilingual): Hindi and English meaning share one
+# vector space, so Hindi questions retrieve from the English corpus directly.
+# The Week-6 A/B (decisions 015) made this the measured winner on BOTH
+# languages: HI MRR 0.458 → 1.000, EN hit 0.93 → 1.00 vs MiniLM.
+EMBED_MODEL = "BAAI/bge-m3"
 
 # Chunking lives in ingest/chunkers.py (loading + cleaning + 3 strategies).
 # "structure" won the Week-2 head-to-head — decisions.md entry 006 has the numbers.
@@ -74,16 +75,19 @@ RRF_K = 60             # Reciprocal Rank Fusion constant (standard value)
 # and English-only — swapped for BAAI/bge-reranker-v2-m3 in Week 6 alongside
 # the embedder (same play as decisions.md 002).
 RERANK = True
-RERANK_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+# Multilingual reranker, swapped alongside the embedder (an English-only
+# cross-encoder would garbage-score Hindi queries and break refusal):
+RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
 RERANK_POOL = 20
 
 # Refusal (Week 4): if even the BEST reranked chunk scores below this, the
 # corpus does not contain the answer — refuse instead of letting an LLM
 # improvise. Tuned on dev-set traps; method and margin in decisions.md 011.
 # Scale: cross-encoder logits (unbounded), not cosine.
-REFUSAL_THRESHOLD = 1.5  # midpoint-ish of the dev gap: best trap +0.48,
-                         # next answerable +3.10 (decisions.md 011; the one
-                         # known false refusal, dev-012, is Week 5's job)
+REFUSAL_THRESHOLD = 0.40  # re-tuned for bge-reranker-v2-m3's 0..1 scale
+                          # (decisions 016): traps ≤ 0.14, answerable cluster
+                          # ≥ 0.65; the two paraphrase/synthesis stragglers
+                          # below it are rescued by the agent's rewrite loop.
 
 # Generation model — Claude Haiku 4.5: the cheap/fast tier, good grounding.
 # Chosen in PRD §8; per-query cost matters for a student project.
