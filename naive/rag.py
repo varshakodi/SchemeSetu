@@ -78,7 +78,12 @@ RERANK = True
 # Multilingual reranker, swapped alongside the embedder (an English-only
 # cross-encoder would garbage-score Hindi queries and break refusal):
 RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
-RERANK_POOL = 20
+# Pool 12 (was 20): current data shows gold docs always inside the top 10 of
+# hybrid order, and the 568M reranker's CPU cost is linear in pool size.
+RERANK_POOL = 12
+# The reranker reads at most this many characters per passage — relevance is
+# decided by the label + opening lines; scoring full chunks doubles latency.
+RERANK_MAX_CHARS = 700
 
 # Refusal (Week 4): if even the BEST reranked chunk scores below this, the
 # corpus does not contain the answer — refuse instead of letting an LLM
@@ -174,9 +179,17 @@ _reranker = None
 
 
 def _get_reranker():
-    """Load the cross-encoder once per process (~80 MB download on first run)."""
+    """Load the cross-encoder once per process (large download on first run).
+
+    Also pins torch's CPU thread count explicitly: under some servers
+    (observed with Streamlit) torch silently falls back to a single thread,
+    turning a ~20s rerank into minutes at 100% of one core.
+    """
     global _reranker
     if _reranker is None:
+        import os as _os
+        import torch
+        torch.set_num_threads(max(1, (_os.cpu_count() or 4) - 1))
         from sentence_transformers import CrossEncoder
         _reranker = CrossEncoder(RERANK_MODEL)
     return _reranker
@@ -242,7 +255,7 @@ def search(query: str, k: int = TOP_K, mode: str | None = None,
     if rerank:
         pool = order[:RERANK_POOL]
         pair_scores = _get_reranker().predict(
-            [(query, records[int(i)]["text"]) for i in pool])
+            [(query, records[int(i)]["text"][:RERANK_MAX_CHARS]) for i in pool])
         ranked = sorted(zip(pool, pair_scores), key=lambda t: -t[1])[:k]
         return [{**records[int(i)], "score": float(s), "rerank": float(s),
                  "cosine": float(cosine[int(i)])} for i, s in ranked]
