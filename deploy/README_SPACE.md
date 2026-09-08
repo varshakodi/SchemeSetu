@@ -6,8 +6,15 @@ One-time setup, ~10 minutes, no card. The result: a public URL for your resume.
 
 1. Sign up / log in at huggingface.co (free account).
 2. Top-right profile menu → **New Space**.
-3. Name: `SchemeSetu` · License: MIT · SDK: **Streamlit** · Hardware:
+3. Name: `SchemeSetu` · License: MIT · **Space SDK: Streamlit** · Hardware:
    **CPU basic (free)** · Public. → **Create Space**.
+
+> ⚠️ **The SDK choice matters and is easy to get wrong.** If you pick
+> **Static**, the Space only serves files to a browser — no Python runs, and
+> step 2 fails with *"secrets are not available for static spaces"*. The type
+> lives in the Space's own `README.md` (`sdk: streamlit`), so you can either
+> delete the Space and recreate it with Streamlit selected, or upload this
+> bundle's `README.md` first to convert it.
 
 ## 2. Add your API keys as SECRETS (never as files!)
 
