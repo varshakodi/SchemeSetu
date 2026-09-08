@@ -1,62 +1,64 @@
-# Deploying SchemeSetu to Hugging Face Spaces (free)
+# Demoing SchemeSetu — three tiers, all free
 
-One-time setup, ~10 minutes, no card. The result: a public URL for your resume.
+**Context (Sept 2026):** Hugging Face Spaces no longer offers a free tier that
+runs compute — Static Spaces are free, Gradio/Docker require PRO, and
+Streamlit is no longer offered at all. Streamlit Community Cloud is still
+free but caps apps at **1 GB RAM**, and this project's models need **1364 MB**
+(measured: BGE-M3 alone is 1126 MB). So there is currently no free host that
+runs SchemeSetu at full fidelity.
 
-## 1. Create the Space
+That is a constraint, not a blocker. What matters for placement season is
+being able to *show the project reliably months from now* — and a hosted link
+that has quietly died is worse than no link at all. Hence three tiers, most
+reliable first.
 
-1. Sign up / log in at huggingface.co (free account).
-2. Top-right profile menu → **New Space**.
-3. Name: `SchemeSetu` · License: MIT · **Space SDK: Streamlit** · Hardware:
-   **CPU basic (free)** · Public. → **Create Space**.
+## Tier 1 — The recorded demo (never breaks)
 
-> ⚠️ **The SDK choice matters and is easy to get wrong.** If you pick
-> **Static**, the Space only serves files to a browser — no Python runs, and
-> step 2 fails with *"secrets are not available for static spaces"*. The type
-> lives in the Space's own `README.md` (`sdk: streamlit`), so you can either
-> delete the Space and recreate it with Streamlit selected, or upload this
-> bundle's `README.md` first to convert it.
+A 3-minute screen recording is the only demo that works with no wifi, no
+expired key, and no vendor policy change. Record it once, keep it in the
+repo README and on your phone.
 
-## 2. Add your API keys as SECRETS (never as files!)
+macOS: `Cmd+Shift+5` → Record Selected Portion → run through:
+one English question (show the Sources panel), one Hindi question (show the
+trace with the rewrite loop), one trap (show the honest refusal), then the
+Eval report tab. Narrate what each panel proves.
 
-Space page → **Settings** → **Variables and secrets** → **New secret**:
-
-- Name `GROQ_API_KEY`, value = your Groq key → Save.
-- Optionally the same for `GEMINI_API_KEY`.
-
-Secrets become environment variables inside the Space — the provider seam
-(`agent/llm.py`) picks them up exactly like on your laptop. Without them the
-app runs in clearly-labelled retrieval-only mode.
-
-## 3. Build and upload the bundle
-
-On your laptop:
+## Tier 2 — The local demo (full fidelity, one command)
 
 ```bash
-python deploy/build_space.py
+./demo.sh
 ```
 
-Then upload the **contents** of `deploy/space_bundle/` to the Space. Easiest
-path (web): Space page → **Files** → **Add file ▾** → **Upload files** →
-drag everything inside `space_bundle/` (folders included) → **Commit**.
+This runs `scripts/doctor.py` first, which verifies python, dependencies,
+corpus, index freshness, cached models, and the API key, and prints the exact
+fix for anything broken — *before* an interviewer is watching. Run it the day
+before, not five minutes before.
 
-Git alternative (the Space is a git repo — same ritual you already know):
+**Durability checklist for months-later use**
+- The models (~4.6 GB) are cached under `~/.cache/huggingface`. Don't clear
+  it. A demo laptop with the cache needs no download and no fast wifi.
+- The API key lives in `~/.zshrc`. Keys can expire or be revoked — the doctor
+  makes a live call, so you'll know in ten seconds. New free key:
+  console.groq.com.
+- Provider model ids drift (this project has already been bitten twice —
+  decisions 013). If the doctor's live call fails with a 404, list the
+  provider's current models and update `agent/llm.py`, or override on the
+  spot with `LLM_MODEL=...`.
+- Retrieval works with no key at all, so even a dead provider leaves you a
+  working demo of search, citations, and the eval report.
 
-```bash
-git clone https://huggingface.co/spaces/YOUR_USERNAME/SchemeSetu hf-space
-cp -R deploy/space_bundle/. hf-space/ && cd hf-space
-git add -A && git commit -m "Deploy SchemeSetu" && git push
-```
+## Tier 3 — A hosted URL (optional, best-effort)
 
-(The push asks for your HF username and, as password, an **access token** from
-huggingface.co/settings/tokens — create one with "Write" permission. Type it
-yourself; never share it or commit it.)
+To fit a 1 GB free host, the app would run a *reduced* configuration: query
+embeddings from a hosted API (Gemini's `gemini-embedding-001` free tier —
+verified cross-lingual, 0.78 cosine on a Hindi-question/English-answer pair)
+against a precomputed corpus index, keyword BM25 in-process, and no local
+cross-encoder — roughly 60 MB of RAM instead of 1364 MB.
 
-## 4. First boot
+That is a genuinely different system, so it would need its own eval run and
+its own refusal threshold, and would be published as such: "deployed config"
+next to "full config" in `evals/results.md`. Never let a resume link point at
+an unmeasured system.
 
-The Space builds (installs requirements), then the **first query downloads
-~4.6 GB of models** — expect several minutes once, after which the Space
-stays warm and answers in seconds. Cold starts after long idle repeat the
-model download (free-tier Spaces have no persistent disk) — that trade-off
-is recorded in decisions.md 017.
-
-Your app will live at: `https://huggingface.co/spaces/YOUR_USERNAME/SchemeSetu`
+Not built yet — Tier 1 and Tier 2 cover the placement-season need. Build it
+only if you want the link, and budget an eval run for it.
