@@ -1,23 +1,16 @@
-"""SchemeSetu — the chat UI. A thin, deliberately designed shell over the agent.
+"""SchemeSetu — the citizen-facing chat UI.
 
-Design rule (unchanged): the UI adds NO intelligence. It renders the agent's
-state — answer, citations, trace — so the evals keep measuring exactly what a
-user experiences.
+Audience rule: everything on this screen must matter to someone trying to find
+out whether they qualify for a government scheme. Engineering evidence — eval
+tables, provider names, retrieval scores — belongs in the repository, not in
+front of a citizen. The UI still adds no intelligence of its own; it renders
+the agent's state, and nothing more.
 
-Visual direction: civic-tech. The clarity discipline of public-service design
-(strong hierarchy, generous space, high contrast, no decoration for its own
-sake) executed with care. Two subject-grounded choices carry it:
-
-  Type — Mukta (Ek Type, an Indian foundry) for UI text and Noto Serif
-  Devanagari for display. Both cover Devanagari AND Latin, so a Hindi answer
-  and an English one read as one voice instead of two mismatched systems.
-  IBM Plex Mono carries identifiers and traces.
-
-  Colour — indigo and burnt saffron: an Indian palette drawn from dye and
-  marigold rather than a literal flag, so it reads considered instead of
-  clip-art. Semantic colour is separate from the accent: green marks verified
-  grounding, amber marks an honest refusal (a refusal is correct behaviour,
-  never an error, and must never look like one).
+Visual system: a green rooted in the subject (agriculture, welfare, growth)
+kept deep and calm rather than neon, on warm paper, with a gold accent for
+emphasis. Colour carries meaning: green marks an answer backed by documents,
+amber marks an honest "not found" — never red, because refusing to guess is
+correct behaviour, not an error.
 
 Run locally:  ./demo.sh          Deployed: see deploy/DEPLOY.md
 """
@@ -35,120 +28,135 @@ import streamlit as st
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-from agent.llm import PROVIDERS, available_provider  # noqa: E402
-from naive.rag import CHUNKS_FILE, REFUSAL_THRESHOLD, search  # noqa: E402
+from agent.llm import available_provider  # noqa: E402
+from naive.rag import CHUNKS_FILE, search  # noqa: E402
 
-st.set_page_config(page_title="SchemeSetu — grounded answers on Indian government schemes",
-                   page_icon="🧭", layout="wide",
+st.set_page_config(page_title="SchemeSetu — Indian government schemes, explained",
+                   page_icon="🌿", layout="centered",
                    initial_sidebar_state="expanded")
 
-EXAMPLES = [
-    ("Who is not eligible for PM-KISAN?", "eligibility"),
-    ("Documents for the SC post-matric scholarship?", "documents"),
-    ("मेरी पत्नी पहली बार माँ बनने वाली है, कोई सरकारी मदद?", "हिंदी"),
-    ("What subsidy for an electric scooter under FAME-II?", "out of scope"),
+SUGGESTIONS = [
+    ("Who is eligible for PM-KISAN?", "Farmer income support"),
+    ("What documents do I need for the SC post-matric scholarship?", "Student scholarship"),
+    ("मेरी पत्नी पहली बार माँ बनने वाली है, कोई सरकारी मदद?", "मातृत्व लाभ"),
+    ("How much help does PMAY-G give to build a house?", "Rural housing"),
 ]
+
+# Plain-language names for the agent's internal steps. Citizens deserve to see
+# how an answer was reached — but as reassurance, not as a debug trace.
+STEP_WORDS = {
+    "classify": "Understood your question",
+    "retrieve": "Searched the official documents",
+    "rewrite": "Rephrased the search using official wording",
+    "generate": "Drafted an answer using only those documents",
+    "verify": "Checked every statement against the sources",
+    "refuse": "Found nothing that answers this",
+    "direct_reply": "Replied directly",
+}
 
 STYLE = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Mukta:wght@300;400;500;600;700&family=Noto+Serif+Devanagari:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Mukta:wght@300;400;500;600;700&family=Noto+Serif+Devanagari:wght@600;700&display=swap');
 
-:root {
-  --paper:#FCFBF8; --panel:#F4F1E9; --card:#FFFFFF;
-  --ink:#1A1714; --ink-2:#5F584E; --ink-3:#8A8175;
-  --rule:#E3DED2; --indigo:#26346B; --indigo-soft:#EEF0F7;
-  --saffron:#B85C10; --verified:#2F6B4F; --amber:#9A6412;
+:root{
+  --paper:#FBFBF8; --card:#FFFFFF;
+  --green-900:#0E3A2B; --green-700:#17603F; --green:#1C7A51; --green-300:#8FC3A9;
+  --green-100:#E4F1EA; --green-50:#F2F8F4;
+  --gold:#BE8C2C; --amber:#8A5B12; --amber-bg:#FDF8EE;
+  --ink:#15201B; --ink-2:#556059; --ink-3:#87918B; --rule:#E2E8E4;
 }
 
-/* strip Streamlit chrome so the page reads as a product, not a notebook */
-[data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"],
-#MainMenu, footer, header[data-testid="stHeader"] { display:none !important; }
-[data-testid="stAppViewContainer"] { background:var(--paper); }
-.block-container { padding-top:2.2rem !important; max-width:1080px; }
-
-html, body, [class*="css"], .stMarkdown, p, li, div, input, textarea, button {
-  font-family:'Mukta',-apple-system,system-ui,sans-serif;
-  color:var(--ink); font-size:1.02rem; line-height:1.65;
+[data-testid="stToolbar"],[data-testid="stDecoration"],[data-testid="stStatusWidget"],
+#MainMenu,footer,header[data-testid="stHeader"]{display:none!important;}
+[data-testid="stAppViewContainer"]{
+  background:
+    radial-gradient(1100px 420px at 50% -8%, var(--green-50) 0%, rgba(242,248,244,0) 70%),
+    var(--paper);
 }
-h1,h2,h3,h4 { font-family:'Noto Serif Devanagari',Georgia,serif; letter-spacing:-.01em; color:var(--ink); }
-code, kbd, .mono { font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:.82rem; }
+.block-container{padding-top:2.6rem!important; padding-bottom:6rem!important; max-width:820px;}
 
-/* ── masthead ─────────────────────────────────────────────── */
-.masthead { display:flex; align-items:baseline; gap:.85rem; flex-wrap:wrap; margin-bottom:.35rem; }
-.wordmark { font-family:'Noto Serif Devanagari',serif; font-weight:700; font-size:2.1rem;
-            letter-spacing:-.02em; line-height:1.1; }
-.wordmark .setu { color:var(--indigo); }
-.devanagari { font-family:'Noto Serif Devanagari',serif; color:var(--ink-3); font-size:1.05rem; }
-.tagline { color:var(--ink-2); font-size:1.02rem; max-width:64ch; margin:.15rem 0 0; }
-.rule { height:3px; margin:1rem 0 1.6rem;
-        background:linear-gradient(90deg,var(--indigo) 0 22%,var(--saffron) 22% 34%,var(--rule) 34% 100%); }
+html,body,[class*="css"],.stMarkdown,p,li,div,input,textarea,button{
+  font-family:'Mukta',-apple-system,system-ui,sans-serif; color:var(--ink);
+  font-size:1.04rem; line-height:1.68;}
+h1,h2,h3{font-family:'Noto Serif Devanagari',Georgia,serif; color:var(--green-900);}
 
-/* ── sidebar as a quiet info column ───────────────────────── */
-[data-testid="stSidebar"] { background:var(--panel); border-right:1px solid var(--rule); }
-[data-testid="stSidebar"] .block-container { padding-top:2rem; }
-.side-h { font-family:'IBM Plex Mono',monospace; font-size:.7rem; letter-spacing:.12em;
-          text-transform:uppercase; color:var(--ink-3); margin:1.5rem 0 .5rem; }
-.stat { display:flex; justify-content:space-between; align-items:baseline;
-        padding:.42rem 0; border-bottom:1px solid var(--rule); }
-.stat .k { color:var(--ink-2); font-size:.92rem; }
-.stat .v { font-family:'IBM Plex Mono',monospace; font-weight:500; font-variant-numeric:tabular-nums; }
-.stat .v.good { color:var(--verified); }
-.pill { display:inline-block; font-family:'IBM Plex Mono',monospace; font-size:.7rem;
-        padding:.18rem .5rem; border-radius:2px; background:var(--indigo-soft);
-        color:var(--indigo); border:1px solid #DCE1EF; }
-.pill.warn { background:#FBF3E4; color:var(--amber); border-color:#EFDFC0; }
-.side-note { color:var(--ink-3); font-size:.84rem; line-height:1.5; }
-.side-note a, .stMarkdown a { color:var(--indigo); text-decoration:underline; text-underline-offset:2px; }
+/* ── header ─────────────────────────────────────────── */
+.hero{text-align:center; margin-bottom:1.6rem;}
+.hero .mark{font-family:'Noto Serif Devanagari',serif; font-size:2.5rem; font-weight:700;
+  color:var(--green-900); line-height:1.15; letter-spacing:-.02em;}
+.hero .mark span{color:var(--green);}
+.hero .sub{color:var(--ink-2); font-size:1.08rem; max-width:52ch; margin:.5rem auto 0;}
+.hero .bar{width:76px; height:4px; margin:1.1rem auto 0; border-radius:3px;
+  background:linear-gradient(90deg,var(--green) 0%,var(--green-300) 55%,var(--gold) 100%);}
 
-/* ── chat ─────────────────────────────────────────────────── */
-[data-testid="stChatMessage"] { background:transparent; padding:.2rem 0 1rem; }
-[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {
-  border-left:3px solid var(--rule); padding-left:1rem; margin:1.2rem 0 .6rem; }
-[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) {
-  border-left:3px solid var(--indigo); padding-left:1rem; background:var(--card);
-  border-radius:0 4px 4px 0; box-shadow:0 1px 2px rgba(26,23,20,.05); padding-top:1rem; }
+/* ── suggestion grid ────────────────────────────────── */
+.sugg-label{text-align:center; color:var(--ink-3); font-size:.9rem; margin:1.8rem 0 .7rem;}
+.stButton button{
+  width:100%; height:100%; min-height:5.1rem; background:var(--card);
+  border:1px solid var(--rule); border-radius:12px; padding:.85rem 1rem;
+  color:var(--ink); font-size:.97rem; font-weight:500; line-height:1.45;
+  box-shadow:0 1px 2px rgba(21,32,27,.04);
+  transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease;}
+/* Streamlit centres label text on nested spans/p; the button is not always a
+   direct child of .stButton, so match by descendant and cover every child */
+.stButton button,.stButton button *{text-align:left!important;}
+.stButton button:hover{
+  border-color:var(--green-300); transform:translateY(-2px);
+  box-shadow:0 6px 18px rgba(28,122,81,.13); color:var(--green-700);}
+.stButton button:active{transform:translateY(0);}
+.stButton button:focus:not(:active){border-color:var(--green); color:var(--green-700);}
 
-/* ── example prompts ──────────────────────────────────────── */
-.stButton>button { background:var(--card); border:1px solid var(--rule); border-radius:2px;
-  color:var(--ink); font-size:.9rem; font-weight:400; text-align:left; padding:.6rem .8rem;
-  line-height:1.35; height:100%; transition:border-color .15s, box-shadow .15s; }
-.stButton>button:hover { border-color:var(--indigo); box-shadow:0 1px 3px rgba(38,52,107,.14);
-  color:var(--indigo); }
-/* Streamlit centres button labels on a generated inner div — override on a
-   stable selector rather than the hashed emotion class, which changes builds */
-.stButton button div, .stButton button p { text-align:left !important; }
+/* ── chat ───────────────────────────────────────────── */
+[data-testid="stChatMessage"]{
+  background:transparent; padding:.35rem 0 .9rem;
+  animation:rise .28s ease both;}
+@keyframes rise{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;}}
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]){
+  background:var(--green-50); border:1px solid var(--green-100);
+  border-radius:14px; padding:.85rem 1.1rem; margin:.9rem 0 .3rem;}
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]){
+  background:var(--card); border:1px solid var(--rule); border-left:3px solid var(--green);
+  border-radius:4px 14px 14px 4px; padding:1.05rem 1.2rem;
+  box-shadow:0 2px 10px rgba(21,32,27,.05);}
 
-/* the chat input auto-sizes to ~270px when rendered inside a tab; hold it to
-   one comfortable line that still grows for long questions */
-[data-testid="stChatInputTextArea"] { min-height:2.75rem !important; max-height:8rem !important; }
-[data-testid="stChatInput"] { border:1px solid var(--rule); border-radius:3px; background:var(--card); }
-[data-testid="stChatInput"]:focus-within { border-color:var(--indigo); }
+/* ── sources ────────────────────────────────────────── */
+.src{border:1px solid var(--rule); border-left:2px solid var(--green-300);
+  background:var(--green-50); padding:.7rem .9rem; margin-bottom:.55rem; border-radius:0 8px 8px 0;}
+.src-h{display:flex; align-items:center; gap:.55rem; margin-bottom:.28rem; flex-wrap:wrap;}
+.src-n{font-weight:600; color:var(--green-700); font-size:.86rem;}
+.src-doc{color:var(--ink-3); font-size:.83rem;}
+.src-t{color:var(--ink-2); font-size:.92rem; line-height:1.55; margin:0;}
 
-/* ── citations ────────────────────────────────────────────── */
-.src { border:1px solid var(--rule); border-left:2px solid var(--indigo); background:var(--card);
-       padding:.7rem .85rem; margin-bottom:.6rem; border-radius:0 3px 3px 0; }
-.src-head { display:flex; align-items:center; gap:.6rem; margin-bottom:.3rem; flex-wrap:wrap; }
-.src-n { font-family:'IBM Plex Mono',monospace; font-weight:500; color:var(--indigo); font-size:.8rem; }
-.src-id { font-family:'IBM Plex Mono',monospace; font-size:.76rem; color:var(--ink-3); }
-.meter { flex:1; min-width:70px; max-width:130px; height:4px; background:var(--rule); border-radius:2px; }
-.meter i { display:block; height:100%; background:var(--verified); border-radius:2px; }
-.src-q { color:var(--ink-2); font-size:.9rem; line-height:1.55; margin:0; }
+/* ── steps + not-found ──────────────────────────────── */
+.steps{display:flex; flex-wrap:wrap; gap:.4rem;}
+.step{background:var(--green-50); border:1px solid var(--green-100); color:var(--green-700);
+  border-radius:20px; padding:.24rem .7rem; font-size:.84rem;}
+.notfound{background:var(--amber-bg); border:1px solid #EFE1C6; border-left:3px solid var(--gold);
+  border-radius:4px 12px 12px 4px; padding:1rem 1.15rem;}
+.notfound .h{color:var(--amber); font-weight:600; display:block; margin-bottom:.25rem;}
 
-/* ── trace + refusal ──────────────────────────────────────── */
-.trace { font-family:'IBM Plex Mono',monospace; font-size:.78rem; color:var(--ink-2);
-         background:var(--panel); border:1px solid var(--rule); padding:.7rem .85rem;
-         border-radius:3px; word-break:break-word; }
-.trace b { color:var(--indigo); font-weight:500; }
-.refusal { border-left:3px solid var(--amber); background:#FDF9F0; padding:.9rem 1.1rem;
-           border-radius:0 4px 4px 0; }
-.refusal .lbl { font-family:'IBM Plex Mono',monospace; font-size:.68rem; letter-spacing:.1em;
-                text-transform:uppercase; color:var(--amber); display:block; margin-bottom:.3rem; }
-.meta { color:var(--ink-3); font-size:.8rem; font-family:'IBM Plex Mono',monospace; }
+/* ── sidebar ────────────────────────────────────────── */
+[data-testid="stSidebar"]{background:#F7F9F7; border-right:1px solid var(--rule);}
+[data-testid="stSidebar"] .block-container{padding-top:2.4rem;}
+.sb-mark{font-family:'Noto Serif Devanagari',serif; font-size:1.5rem; font-weight:700;
+  color:var(--green-900);}
+.sb-mark span{color:var(--green);}
+.sb-text{color:var(--ink-2); font-size:.95rem; margin-top:.4rem;}
+.sb-data{margin-top:1.5rem; padding:.75rem .9rem; background:var(--green-50);
+  border:1px solid var(--green-100); border-radius:10px; color:var(--green-700);
+  font-size:.92rem;}
+.sb-note{margin-top:2rem; padding-top:1rem; border-top:1px solid var(--rule);
+  color:var(--ink-3); font-size:.82rem; line-height:1.55;}
 
-[data-testid="stExpander"] { border:none !important; box-shadow:none !important; }
-[data-testid="stExpander"] summary { font-size:.85rem; color:var(--ink-2); font-weight:500; }
-[data-testid="stTabs"] button p { font-size:.95rem; font-weight:500; }
-[data-testid="stChatInput"] textarea { font-size:1rem; }
+/* ── input ──────────────────────────────────────────── */
+[data-testid="stChatInput"]{border:1px solid var(--rule); border-radius:14px;
+  background:var(--card); box-shadow:0 3px 14px rgba(21,32,27,.07);}
+[data-testid="stChatInput"]:focus-within{border-color:var(--green);
+  box-shadow:0 3px 18px rgba(28,122,81,.16);}
+[data-testid="stChatInputTextArea"]{min-height:2.9rem!important; font-size:1.02rem;}
+[data-testid="stBottomBlockContainer"]{background:transparent; padding-bottom:1.2rem;}
+[data-testid="stExpander"]{border:none!important; box-shadow:none!important;}
+[data-testid="stExpander"] summary{font-size:.9rem; color:var(--green-700); font-weight:500;}
 </style>
 """
 
@@ -165,9 +173,29 @@ def corpus_stats() -> tuple[int, int]:
     return len(records), len({r["doc_id"] for r in records})
 
 
-def render_result(state: dict, elapsed: float) -> None:
-    """Answer, then the evidence behind it. Refusals get their own treatment —
-    an honest 'I don't know' is a correct outcome, not an error state."""
+def humanise(path: list[str]) -> list[str]:
+    """Turn the agent's internal node names into steps a citizen can read."""
+    steps = []
+    for node in path:
+        name = node.split("(")[0].strip()
+        words = STEP_WORDS.get(name)
+        if words and (not steps or steps[-1] != words):
+            steps.append(words)
+    return steps
+
+
+ACRONYMS = {"pm", "pmay", "pmjay", "pmsby", "pmjjby", "pmmvy", "pmfby", "apy",
+            "kcc", "nmmss", "sc", "st", "obc", "faq", "og", "pms", "ab", "g"}
+
+
+def pretty_doc(doc_id: str) -> str:
+    """A filename a citizen can read: 'myscheme_pm_kisan.md' -> 'PM Kisan'."""
+    stem = doc_id.rsplit(".", 1)[0].replace("myscheme_", "")
+    return " ".join(w.upper() if w.lower() in ACRONYMS else w.capitalize()
+                    for w in stem.split("_"))
+
+
+def render_answer(state: dict) -> None:
     response = state.get("response", "")
     body = response.split("Sources:")[0].strip()
     answered = "Sources:" in response
@@ -175,126 +203,85 @@ def render_result(state: dict, elapsed: float) -> None:
     if answered:
         st.markdown(body)
     else:
-        st.markdown(f'<div class="refusal"><span class="lbl">No grounded answer</span>'
+        st.markdown(f'<div class="notfound"><span class="h">I could not find this in my documents</span>'
                     f'{html.escape(body)}</div>', unsafe_allow_html=True)
 
     if answered and state.get("hits"):
-        with st.expander(f"Sources — {len(state['hits'])} passages from the corpus"):
+        with st.expander(f"Where this comes from — {len(state['hits'])} official passages"):
             for i, h in enumerate(state["hits"], 1):
-                score = h.get("rerank")
-                meter = (f'<span class="meter"><i style="width:{max(0, min(1, score)) * 100:.0f}%"></i></span>'
-                         f'<span class="src-id">{score:.2f}</span>') if score is not None else ""
+                doc = pretty_doc(h["doc_id"])
                 st.markdown(
-                    f'<div class="src"><div class="src-head"><span class="src-n">[{i}]</span>'
-                    f'<span class="src-id">{html.escape(h["chunk_id"])}</span>{meter}</div>'
-                    f'<p class="src-q">{html.escape(" ".join(h["text"].split())[:340])}…</p></div>',
+                    f'<div class="src"><div class="src-h"><span class="src-n">[{i}]</span>'
+                    f'<span class="src-doc">{html.escape(doc.title())}</span></div>'
+                    f'<p class="src-t">{html.escape(" ".join(h["text"].split())[:320])}…</p></div>',
                     unsafe_allow_html=True)
 
-    with st.expander("Trace — the agent's path through the graph"):
-        path = "  <b>→</b>  ".join(html.escape(p) for p in state.get("path", []))
-        st.markdown(f'<div class="trace">{path}</div>', unsafe_allow_html=True)
-        st.markdown(f'<p class="meta">Evidence threshold {REFUSAL_THRESHOLD} · below it the agent '
-                    f'rewrites the query, then refuses rather than guessing · answered in '
-                    f'{elapsed:.1f}s</p>', unsafe_allow_html=True)
+    steps = humanise(state.get("path", []))
+    if steps:
+        with st.expander("How I found this"):
+            st.markdown('<div class="steps">'
+                        + "".join(f'<span class="step">{html.escape(s)}</span>' for s in steps)
+                        + '</div>', unsafe_allow_html=True)
 
 
-def run_question(question: str) -> None:
+def answer(question: str) -> None:
     st.session_state.history.append({"role": "user", "text": question})
-    with st.chat_message("assistant"):
-        start = time.perf_counter()
+    with st.chat_message("assistant", avatar="🌿"):
         if available_provider():
-            with st.spinner("Retrieving, grading evidence, grounding the answer…"):
+            with st.spinner("Reading the official documents…"):
                 state = get_agent().invoke({"question": question, "path": []})
         else:
-            state = {"response": "No language model is configured on this deployment, so "
-                                 "only retrieval is available. The passages below are what "
-                                 "the system found.\n\nSources:",
-                     "hits": search(question), "path": ["retrieve (no LLM configured)"]}
-        elapsed = time.perf_counter() - start
-        render_result(state, elapsed)
-    st.session_state.history.append({"role": "assistant", "state": state, "elapsed": elapsed})
+            state = {"response": "I can only search right now, not write answers. "
+                                 "Here is what I found in the documents.\n\nSources:",
+                     "hits": search(question), "path": ["retrieve"]}
+        render_answer(state)
+    st.session_state.history.append({"role": "assistant", "state": state})
 
 
 st.markdown(STYLE, unsafe_allow_html=True)
+n_chunks, n_docs = corpus_stats()
 
-# ── sidebar ──────────────────────────────────────────────────────────────
+# ── sidebar: identity, data source, disclaimer ────────────────────────────
 with st.sidebar:
-    st.markdown('<div class="wordmark">Scheme<span class="setu">Setu</span></div>'
-                '<p class="side-note" style="margin-top:.2rem">Bridging citizens and '
-                'the schemes they qualify for.</p>', unsafe_allow_html=True)
+    st.markdown('<div class="sb-mark">Scheme<span>Setu</span></div>'
+                '<p class="sb-text">Grounded answers about Indian government '
+                'schemes in English and Hindi.</p>'
+                f'<div class="sb-data">Currently searching across <b>{n_docs} official '
+                f'documents</b> — eligibility rules, benefits and required papers.</div>'
+                '<p class="sb-note">Answers are generated by AI and are not professional '
+                'advice. Always confirm details with the official scheme portal or your '
+                'nearest government office before applying.</p>', unsafe_allow_html=True)
 
-    n_chunks, n_docs = corpus_stats()
-    st.markdown('<div class="side-h">Corpus</div>'
-                f'<div class="stat"><span class="k">Documents</span><span class="v">{n_docs}</span></div>'
-                f'<div class="stat"><span class="k">Indexed passages</span><span class="v">{n_chunks}</span></div>'
-                '<div class="stat"><span class="k">Languages</span><span class="v">EN · हिं</span></div>',
-                unsafe_allow_html=True)
+# ── main: header, suggestions, conversation ───────────────────────────────
+if "history" not in st.session_state:
+    st.session_state.history = []
 
-    st.markdown('<div class="side-h">Measured quality</div>'
-                '<div class="stat"><span class="k">Refuses out-of-corpus</span><span class="v good">1.00</span></div>'
-                '<div class="stat"><span class="k">Wrongly refuses</span><span class="v good">0.00</span></div>'
-                '<div class="stat"><span class="k">Faithfulness</span><span class="v good">1.00</span></div>'
-                '<div class="stat"><span class="k">Hindi ⇄ English parity</span><span class="v good">exact</span></div>'
-                '<p class="side-note" style="margin-top:.5rem">Judged by an independent model. '
-                'Full method and per-phase history in the eval report.</p>', unsafe_allow_html=True)
+st.markdown('<div class="hero"><div class="mark">Scheme<span>Setu</span></div>'
+            '<p class="sub">Ask about any government scheme in English or हिंदी — '
+            'eligibility, benefits, or the documents you need.</p>'
+            '<div class="bar"></div></div>', unsafe_allow_html=True)
 
-    provider = available_provider()
-    st.markdown('<div class="side-h">Runtime</div>' + (
-        f'<span class="pill">{provider} · {PROVIDERS.get(provider, {}).get("model", "?")}</span>'
-        if provider else '<span class="pill warn">retrieval only — no model configured</span>'),
-        unsafe_allow_html=True)
+picked = None
+if not st.session_state.history:
+    st.markdown('<p class="sugg-label">Try one of these</p>', unsafe_allow_html=True)
+    for row in (SUGGESTIONS[:2], SUGGESTIONS[2:]):
+        for col, (text, topic) in zip(st.columns(2, gap="medium"), row):
+            if col.button(text, key=f"s_{topic}", help=topic, use_container_width=True):
+                picked = text
 
-    st.markdown('<div class="side-h">Project</div>'
-                '<p class="side-note">'
-                '<a href="https://github.com/varshakodi/SchemeSetu">Source code</a> · '
-                '<a href="https://github.com/varshakodi/SchemeSetu/blob/main/evals/results.md">Eval report</a> · '
-                '<a href="https://github.com/varshakodi/SchemeSetu/blob/main/decisions.md">Decision log</a>'
-                '</p><p class="side-note">Answers are grounded in official scheme documents '
-                '(provenance in <span class="mono">data/registry.csv</span>) and are not '
-                'professional advice — verify against the source before acting.</p>',
-                unsafe_allow_html=True)
+for turn in st.session_state.history:
+    if turn["role"] == "user":
+        with st.chat_message("user", avatar="🙋"):
+            st.markdown(turn["text"])
+    else:
+        with st.chat_message("assistant", avatar="🌿"):
+            render_answer(turn["state"])
 
-# ── masthead ─────────────────────────────────────────────────────────────
-st.markdown(
-    '<div class="masthead"><span class="wordmark">Scheme<span class="setu">Setu</span></span>'
-    '<span class="devanagari">स्कीम सेतु</span></div>'
-    '<p class="tagline">Ask about any Indian government scheme in English or हिंदी. '
-    'Every answer is grounded in official documents and cited to the passage it came '
-    'from — and when the corpus does not hold the answer, it says so.</p>'
-    '<div class="rule"></div>', unsafe_allow_html=True)
+typed = st.chat_input("Ask about a scheme — eligibility, benefits, documents…")
 
-tab_chat, tab_evals, tab_about = st.tabs(["Ask", "Eval report", "About"])
-
-with tab_chat:
-    if "history" not in st.session_state:
-        st.session_state.history = []
-
-    clicked = None
-    if not st.session_state.history:
-        st.markdown('<div class="side-h" style="margin-top:0">Try one</div>', unsafe_allow_html=True)
-        for col, (example, kind) in zip(st.columns(len(EXAMPLES)), EXAMPLES):
-            if col.button(example, key=f"ex_{kind}", use_container_width=True,
-                          help=f"Example: {kind}"):
-                clicked = example
-
-    for turn in st.session_state.history:
-        if turn["role"] == "user":
-            with st.chat_message("user"):
-                st.markdown(turn["text"])
-        else:
-            with st.chat_message("assistant"):
-                render_result(turn["state"], turn["elapsed"])
-
-    question = st.chat_input("Ask about a scheme — eligibility, benefits, documents…")
-    question = question or clicked
-    if question:
-        with st.chat_message("user"):
-            st.markdown(question)
-        run_question(question)
-        st.rerun()
-
-with tab_evals:
-    st.markdown((ROOT / "evals" / "results.md").read_text())
-
-with tab_about:
-    st.markdown((ROOT / "README.md").read_text().split("## Quickstart")[0])
+question = typed or picked
+if question:
+    with st.chat_message("user", avatar="🙋"):
+        st.markdown(question)
+    answer(question)
+    st.rerun()

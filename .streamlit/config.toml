@@ -1,12 +1,11 @@
-# Deliberate single-theme design: the UI commits to a "paper / official
-# document" metaphor, so it forces light rather than shipping a half-considered
+# Deliberate single-theme design: the UI commits to a "paper / official document" metaphor, so it forces light rather than shipping a half-considered
 # dark variant. Colours mirror the tokens in app.py's stylesheet.
 [theme]
 base = "light"
-primaryColor = "#26346B"
-backgroundColor = "#FCFBF8"
-secondaryBackgroundColor = "#F4F1E9"
-textColor = "#1A1714"
+primaryColor = "#1C7A51"
+backgroundColor = "#FBFBF8"
+secondaryBackgroundColor = "#F2F8F4"
+textColor = "#15201B"
 
 [server]
 headless = true
