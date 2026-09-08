@@ -61,7 +61,7 @@ sys.path.insert(0, str(ROOT))
 from langgraph.graph import END, START, StateGraph  # noqa: E402
 
 from naive.rag import (  # noqa: E402
-    REFUSAL_THRESHOLD, SYSTEM_PROMPT, build_context, search,
+    REFUSAL_THRESHOLD, SYSTEM_PROMPT, build_context, normalise_citations, search,
 )
 from agent.llm import get_llm  # noqa: E402  (the provider seam — see agent/llm.py)
 
@@ -140,7 +140,8 @@ def build_graph(llm=None, checkpointer=None, retriever=None):
             "this question, reply with exactly NO_ANSWER and nothing else.",
             f"Context passages:\n\n{build_context(state['hits'])}\n\n"
             f"Question: {state['question']}")
-        return {"answer": answer, "regens": state.get("regens", 0),
+        return {"answer": normalise_citations(answer),
+                "regens": state.get("regens", 0),
                 "path": state["path"] + ["generate"]}
 
     def verify(state: AgentState) -> AgentState:

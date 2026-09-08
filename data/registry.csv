@@ -18,3 +18,8 @@ myscheme_nmmss.md,National Means-cum-Merit Scholarship,Ministry of Education,en,
 pm_kisan.md,PM-KISAN,sample,en,(hand-written placeholder in data/samples),2026-08-24,sample — retire once real corpus covers it
 post_matric_scholarship.md,PMS-SC,sample,en,(hand-written placeholder in data/samples),2026-08-24,sample — retire once real corpus covers it
 pmay_gramin.md,PMAY-Gramin,sample,en,(hand-written placeholder in data/samples),2026-08-24,sample — retire once real corpus covers it
+myscheme_pmuy.md,PM Ujjwala Yojana,Ministry of Petroleum and Natural Gas,en,https://www.myscheme.gov.in/schemes/pmuy,2026-09-08,full (FAQ answers not captured)
+myscheme_pmjdy.md,PM Jan Dhan Yojana,Ministry of Finance,en,https://www.myscheme.gov.in/schemes/pmjdy,2026-09-08,full (FAQ answers not captured)
+myscheme_stand_up_india.md,Stand-Up India,Ministry of Finance,en,https://www.myscheme.gov.in/schemes/sui,2026-09-08,full (FAQ answers not captured)
+myscheme_pms_st.md,Post Matric Scholarship ST,Ministry of Tribal Affairs,en,https://www.myscheme.gov.in/schemes/post-st,2026-09-08,partial: details+benefits table; eligibility/documents not rendered
+myscheme_old_age_samman_haryana.md,Old Age Samman Allowance (state),Haryana / Dept of Social Justice,en,https://www.myscheme.gov.in/schemes/oasas,2026-09-08,partial: details/benefits/eligibility captured

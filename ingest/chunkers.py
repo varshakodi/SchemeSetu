@@ -82,8 +82,13 @@ def load_documents(clean: bool = True) -> list[tuple[str, str, str]]:
         for path in sorted(d.glob("*")):
             if path.suffix.lower() in {".md", ".txt"}:
                 raw = path.read_text(encoding="utf-8")
-                title = doc_title(raw, fallback=path.stem)
-                docs.append((path.name, title, clean_text(raw) if clean else raw))
+                # Title must come from CLEANED text: a parsed PDF starts with the
+                # extractor's provenance header ("# Extracted from ... parse.py"),
+                # and taking the title from the raw text put that string into every
+                # chunk label — visible to users in the citation panel.
+                cleaned = clean_text(raw)
+                title = doc_title(cleaned, fallback=path.stem.replace("_", " ").title())
+                docs.append((path.name, title, cleaned if clean else raw))
     return docs
 
 
