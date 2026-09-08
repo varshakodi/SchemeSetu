@@ -1,0 +1,20 @@
+# Deliberate single-theme design: the UI commits to a "paper / official
+# document" metaphor, so it forces light rather than shipping a half-considered
+# dark variant. Colours mirror the tokens in app.py's stylesheet.
+[theme]
+base = "light"
+primaryColor = "#26346B"
+backgroundColor = "#FCFBF8"
+secondaryBackgroundColor = "#F4F1E9"
+textColor = "#1A1714"
+
+[server]
+headless = true
+# Streamlit's default watcher walks every installed package on startup, which
+# with transformers floods the log with ModuleNotFoundError probes for optional
+# deps (torchvision) and slows boot. We don't need hot-reload in a demo or in
+# production; use "auto" while actively editing app.py.
+fileWatcherType = "none"
+
+[browser]
+gatherUsageStats = false
