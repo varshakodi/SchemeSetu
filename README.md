@@ -72,12 +72,14 @@ separate dev set, metric definitions) is documented in
 ```bash
 git clone https://github.com/varshakodi/SchemeSetu.git && cd SchemeSetu
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # runtime deps + tests/eval tooling
 
 python ingest/parse.py        # extract text from any PDFs in data/raw
 python naive/rag.py index     # chunk + embed the corpus
 python naive/rag.py ask "Who is eligible for PM-KISAN?"
 ```
+
+Or just `./demo.sh`, which preflights everything (`scripts/doctor.py`) and launches the UI.
 
 Retrieval runs fully offline. Generating grounded, cited answers needs an LLM
 provider — **including fully free options** (Groq, Gemini, Cerebras free

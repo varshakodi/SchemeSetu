@@ -1,9 +1,14 @@
-# Pinned exact versions (PRD §8: an unpinned repo that stops running is a dead
-# portfolio piece). After installing/upgrading anything, update the pin here.
+# RUNTIME dependencies — what the deployed app needs. Kept minimal so the
+# hosted build stays small and fast. Dev/eval extras: requirements-dev.txt.
+#
+# The CPU-only PyTorch index matters for deployment: on Linux the default
+# `torch` wheel bundles CUDA (~2.5 GB) and will blow a free host's build
+# budget. This project runs inference on CPU everywhere.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 numpy==2.4.6
+torch==2.13.0
 sentence-transformers==6.0.0
-anthropic==1.0.0
-pypdf==6.16.2
-pytest==9.1.1
 langgraph==1.2.11
 streamlit==1.62.0
+httpx==0.28.1

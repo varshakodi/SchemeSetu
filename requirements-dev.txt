@@ -1,0 +1,9 @@
+# Everything in the deployed app, plus tooling used for building the corpus,
+# running evals, and testing. Install this one for local development:
+#     .venv/bin/pip install -r requirements-dev.txt
+-r requirements.txt
+
+anthropic==1.0.0     # optional LLM provider (PRD default; Groq/Gemini are free)
+pypdf==6.16.2        # PDF -> text for ingest/parse.py
+pytest==9.1.1        # test suite
+psutil==7.2.2        # memory measurement in scripts/ and experiments
