@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -78,9 +79,12 @@ RERANK = True
 # Multilingual reranker, swapped alongside the embedder (an English-only
 # cross-encoder would garbage-score Hindi queries and break refusal):
 RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
-# Pool 12 (was 20): current data shows gold docs always inside the top 10 of
-# hybrid order, and the 568M reranker's CPU cost is linear in pool size.
-RERANK_POOL = 12
+# Pool size is a function of CORPUS SIZE, not a constant. Tuned to 12 at 116
+# chunks; growing the corpus to 132 pushed one Hindi question's gold document
+# to hybrid rank 16, outside the pool, so the reranker never saw it and dev
+# hit@5 fell to 0.94. Swept again (decisions 019): 16 restores 1.00/1.000 and
+# costs less than 20 or 26. Re-sweep whenever the corpus grows.
+RERANK_POOL = 16
 # The reranker reads at most this many characters per passage — relevance is
 # decided by the label + opening lines; scoring full chunks doubles latency.
 RERANK_MAX_CHARS = 700
@@ -274,6 +278,20 @@ suggest what the user could ask instead. Never guess or use outside knowledge.
 Answer in the language the question was asked in (an English question gets an
 English answer, a Hindi question gets a Hindi answer), regardless of the
 language of the scheme names involved."""
+
+
+CITATION_RE = re.compile(r"【\s*(\d+)\s*(?:[†‡][^】]*)?】")
+
+
+def normalise_citations(text: str) -> str:
+    """Rewrite model-specific citation markers into plain [n].
+
+    Some models (gpt-oss via Groq, notably) emit their own internal citation
+    syntax — 【1†L1-L4】 — instead of the [1] the prompt asks for, and do it
+    inconsistently between runs. Prompting alone did not hold, so the output is
+    normalised here: one regex, applied everywhere an answer is produced.
+    """
+    return CITATION_RE.sub(r"[\1]", text)
 
 
 def build_context(hits: list[dict]) -> str:

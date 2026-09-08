@@ -40,6 +40,8 @@ SUGGESTIONS = [
     ("What documents do I need for the SC post-matric scholarship?", "Student scholarship"),
     ("मेरी पत्नी पहली बार माँ बनने वाली है, कोई सरकारी मदद?", "मातृत्व लाभ"),
     ("How much help does PMAY-G give to build a house?", "Rural housing"),
+    ("किसान क्रेडिट कार्ड पर ब्याज दर कितनी है?", "किसान ऋण"),
+    ("What health cover does Ayushman Bharat provide?", "Health insurance"),
 ]
 
 # Plain-language names for the agent's internal steps. Citizens deserve to see
@@ -68,10 +70,32 @@ STYLE = """
 
 [data-testid="stToolbar"],[data-testid="stDecoration"],[data-testid="stStatusWidget"],
 #MainMenu,footer,header[data-testid="stHeader"]{display:none!important;}
+/* Living green ground: three soft light sources that drift slowly against each
+   other, so the page breathes instead of sitting flat. Slow and low-contrast on
+   purpose — this is a page people read, not a screensaver. Motion is disabled
+   for anyone who has asked their system for reduced motion. */
 [data-testid="stAppViewContainer"]{
   background:
-    radial-gradient(1100px 420px at 50% -8%, var(--green-50) 0%, rgba(242,248,244,0) 70%),
-    var(--paper);
+    radial-gradient(760px 520px at 12% -6%, rgba(28,122,81,.16), transparent 62%),
+    radial-gradient(700px 480px at 88% 2%, rgba(190,140,44,.13), transparent 60%),
+    radial-gradient(900px 620px at 50% 108%, rgba(143,195,169,.20), transparent 66%),
+    linear-gradient(180deg, #F6FAF7 0%, var(--paper) 42%, #F4F9F5 100%);
+  background-attachment: fixed;
+  background-size: 200% 200%, 200% 200%, 200% 200%, 100% 100%;
+  animation: drift 26s ease-in-out infinite alternate;
+}
+@keyframes drift{
+  0%  {background-position: 8% 0%, 92% 4%, 50% 100%, 0 0;}
+  100%{background-position: 0% 6%, 100% 0%, 44% 92%, 0 0;}
+}
+.hero .mark{animation:rise .5s ease both;}
+.hero .sub{animation:rise .5s .06s ease both;}
+.hero .bar{animation:rise .5s .12s ease both, glow 4.5s ease-in-out infinite;}
+@keyframes glow{0%,100%{opacity:.85; width:76px;} 50%{opacity:1; width:104px;}}
+.stButton button{animation:rise .45s ease both;}
+@media (prefers-reduced-motion: reduce){
+  [data-testid="stAppViewContainer"], .hero .mark, .hero .sub, .hero .bar,
+  .stButton button, [data-testid="stChatMessage"]{animation:none!important;}
 }
 .block-container{padding-top:2.6rem!important; padding-bottom:6rem!important; max-width:820px;}
 
@@ -196,15 +220,25 @@ def pretty_doc(doc_id: str) -> str:
 
 
 def render_answer(state: dict) -> None:
+    """Three outcomes, three treatments — not two.
+
+    A greeting and a refusal both arrive without a Sources block, so keying off
+    that string alone dressed "Hello, I can help with…" in the amber not-found
+    box. The agent already records which node produced the reply; read the path
+    instead of guessing from the text.
+    """
     response = state.get("response", "")
     body = response.split("Sources:")[0].strip()
-    answered = "Sources:" in response
+    path = state.get("path", [])
+    refused = any(step.startswith("refuse") for step in path)
+    greeted = any(step.startswith("direct_reply") for step in path)
+    answered = not refused and not greeted
 
-    if answered:
-        st.markdown(body)
-    else:
+    if refused:
         st.markdown(f'<div class="notfound"><span class="h">I could not find this in my documents</span>'
                     f'{html.escape(body)}</div>', unsafe_allow_html=True)
+    else:
+        st.markdown(body)
 
     if answered and state.get("hits"):
         with st.expander(f"Where this comes from — {len(state['hits'])} official passages"):
@@ -264,7 +298,7 @@ st.markdown('<div class="hero"><div class="mark">Scheme<span>Setu</span></div>'
 picked = None
 if not st.session_state.history:
     st.markdown('<p class="sugg-label">Try one of these</p>', unsafe_allow_html=True)
-    for row in (SUGGESTIONS[:2], SUGGESTIONS[2:]):
+    for row in (SUGGESTIONS[0:2], SUGGESTIONS[2:4], SUGGESTIONS[4:6]):
         for col, (text, topic) in zip(st.columns(2, gap="medium"), row):
             if col.button(text, key=f"s_{topic}", help=topic, use_container_width=True):
                 picked = text
