@@ -1,7 +1,16 @@
 # Runs the fast unit tests on every push and pull request.
-# Deliberately lightweight: no ML model downloads — the tests cover the pure
-# algorithmic pieces (BM25 math, chunking, cleaning) so CI stays under a
-# minute. The embedding/eval pipeline runs locally where the model cache lives.
+#
+# Deliberately lightweight: no torch, no sentence-transformers, no model
+# downloads, so CI stays under a minute. The tests cover the pure algorithmic
+# pieces (BM25 math, chunking, cleaning) plus the agent's routing logic, which
+# is testable offline because build_graph() takes an injected LLM and retriever
+# — the state machine is exercised with a ScriptedLLM and a fake retriever.
+#
+# The install list below must stay in sync with what importing `agent.graph`
+# actually needs: langgraph and httpx. It drifted once — ci.yml was written
+# after tests/test_agent.py landed and never listed langgraph, so collection
+# failed and NONE of the tests ran, silently, from the day CI was added.
+# tests/test_import_surface.py now fails if that import goes heavy again.
 name: CI
 
 on:
@@ -17,5 +26,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install pytest numpy pypdf
+      - run: pip install pytest numpy pypdf langgraph httpx
       - run: pytest tests/ -q
