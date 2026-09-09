@@ -62,16 +62,16 @@ own test suite, frozen, and run once.
 
 | Metric | Result | Target (PRD §5) | |
 |---|---|---|---|
-| hit@5 | **0.93** (37/40) | ≥ 0.85 | ✓ |
-| MRR@10 | **0.879** | — | |
-| Trap refusal | **1.00** (7/7) | ≥ 0.90 | ✓ |
+| hit@5 | **0.94** (50/53) | ≥ 0.85 | ✓ |
+| MRR@10 | **0.909** | — | |
+| Trap refusal | **1.00** (10/10) | ≥ 0.90 | ✓ |
 | Cites the gold document | 48/49 *(full set)* | — | |
 | False refusal | 0.08 *(full set, agent-level)* | ≤ 0.10 | ✓ |
 | Faithfulness | *not yet validly measured* | ≥ 0.90 | see below |
 
-Measured on the **52 questions with no dev-set twin**. The frozen set has 68, but
-16 turned out to duplicate questions the system was tuned against — see *What the
-golden set caught*, below. Rows marked *(full set)* still await a clean re-run.
+Measured on **golden v2** — 68 questions, none of which overlaps the dev set the
+system was tuned on. v1 contained 16 duplicates and is withdrawn; see *What the
+golden set caught*, below. Rows marked *(full set)* await a clean agent re-run.
 
 Tuning happened on a separate dev set, never on these questions. That
 separation is the whole point: numbers from a set you tuned against describe
@@ -96,12 +96,14 @@ not. All are documented rather than quietly fixed.
 word-for-word. The dev set is what chunking, `RERANK_POOL` and the refusal
 threshold were tuned against, so those questions measured a system already
 optimised for them. Drafting "from the corpus" was not enough: the same corpus
-produces the same obvious questions twice. Re-measuring on the 52 questions
-with no dev twin moved hit@5 from 0.94 to 0.93 and MRR from 0.909 to 0.879 —
-the leakage inflated the numbers but did not manufacture them. The original
-row is withdrawn rather than deleted, and `evals/verify_golden.py` now fails
-if any golden question overlaps a dev question by more than half its words.
-See [`decisions.md`](decisions.md) 024.
+produces the same obvious questions twice. The 16 were replaced with corpus
+facts neither set had touched, and v2 measures **0.94 / 0.909 — identical to the
+contaminated v1**. All three failures were clean questions in both sets, so the
+leakage changed the methodology, not the outcome. It deserved fixing on
+principle, not because it flattered the result. The original row is withdrawn
+rather than deleted, and `evals/verify_golden.py` now fails any golden question
+sharing more than half its words with a dev question. See
+[`decisions.md`](decisions.md) 024.
 
 **Rank fusion cannot tell silence from a vote.** A Hindi question's gold
 document sits at *dense rank 1* and *hybrid rank 19* — outside the rerank

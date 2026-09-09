@@ -38,14 +38,14 @@ OVERLAP_LIMIT = 0.5
 # Subjects the traps ask about. Each must stay absent from the corpus.
 TRAP_SUBJECTS = {
     "g-051": [r"mudra", r"\bPMMY\b"],
-    "g-052": [r"\bFAME\b", r"electric (two|scooter|vehicle)"],
-    "g-053": [r"PMAY[- ]?U\b", r"carpet area", r"urban housing"],
+    "g-052": [r"svanidhi", r"street vendor"],
+    "g-053": [r"surya ghar", r"solar", r"rooftop"],
     "g-054": [r"sukanya"],
     "g-055": [r"startup india", r"tax exemption"],
     "g-056": [r"vishwakarma", r"toolkit"],
     "g-057": [r"e-?shram"],
     "g-058": [r"\bABHA\b", r"digital mission", r"health id"],
-    "g-059": [r"drone"],
+    "g-059": [r"saubhagya"],
     "g-060": [r"ladli|laadli|behna"],
 }
 
@@ -96,9 +96,13 @@ def check_figures(rows: list[dict], corpus: dict[str, str], fail) -> None:
     for r in rows:
         if not r["gold_doc_ids"]:
             continue
+        # Token-exact, not substring: "10" appears inside "10,000", so a
+        # substring test passed a figure the document never stated -- it said
+        # "ten years" in words. Compare whole numbers against whole numbers.
         text = " ".join(corpus[d] for d in r["gold_doc_ids"]).replace(",", "")
+        present = set(re.findall(r"\d+", text))
         for num in {n.replace(",", "") for n in re.findall(r"\d[\d,]*", r["answer"])}:
-            if len(num) >= 2 and num not in text:
+            if len(num) >= 2 and num not in present:
                 fail(f"{r['id']}: figure {num} is not in {', '.join(r['gold_doc_ids'])}")
 
 
