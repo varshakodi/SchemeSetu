@@ -62,8 +62,8 @@ own test suite, frozen, and run once.
 
 | Metric | Result | Target (PRD §5) | |
 |---|---|---|---|
-| hit@5 | **0.94** (50/53) | ≥ 0.85 | ✓ |
-| MRR@10 | **0.909** | — | |
+| hit@5 | **0.96** (51/53) | ≥ 0.85 | ✓ |
+| MRR@10 | **0.925** | — | |
 | Trap refusal | **1.00** (10/10) | ≥ 0.90 | ✓ |
 | Cites the gold document | 48/49 *(full set)* | — | |
 | False refusal | 0.08 *(full set, agent-level)* | ≤ 0.10 | ✓ |
@@ -105,15 +105,19 @@ rather than deleted, and `evals/verify_golden.py` now fails any golden question
 sharing more than half its words with a dev question. See
 [`decisions.md`](decisions.md) 024.
 
-**Rank fusion cannot tell silence from a vote.** A Hindi question's gold
-document sits at *dense rank 1* and *hybrid rank 19* — outside the rerank
-pool, so the cross-encoder never scored it. BM25 is language-blind and scores
-every chunk exactly 0.000 for a Devanagari query, but sorting an all-zero
-array still yields an order, and RRF hands that arbitrary order real weight.
-Noise outvoted a correct hit. A one-line guard is written but **not applied**:
-the dev set scores 1.00 either way and cannot validate it, and changing
-retrieval after freezing would invalidate the numbers above. See
-[`decisions.md`](decisions.md) 021.
+**Rank fusion could not tell silence from a vote — found, then fixed.** A Hindi
+question's gold document sat at *dense rank 1* and *hybrid rank 19*, outside the
+rerank pool, so the cross-encoder never scored it. BM25 is language-blind and
+scores every chunk exactly 0.000 for a Devanagari query — but sorting an
+all-zero array still yields an order, and RRF handed that arbitrary order real
+weight. Noise outvoted a correct hit.
+
+The fix is one condition: a retriever only votes if it actually discriminated.
+It could not be validated at first, because the dev set was saturated at 1.00
+and scored identically either way. So the dev set was hardened (21 → 33
+questions, weighted to Hindi and thin documents), which separated them cleanly:
+Hindi hit@5 0.91 → 1.00, English unchanged. Shipped, and golden v2 re-measured
+at **0.96 / 0.925**. See [`decisions.md`](decisions.md) 021 and 025.
 
 **A judge that dies mid-run silently changes the metric.** Faithfulness first
 read 0.84, under target. The cause was not the system: the primary judge's

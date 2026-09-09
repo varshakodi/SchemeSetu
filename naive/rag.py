@@ -247,8 +247,24 @@ def search(query: str, k: int = TOP_K, mode: str | None = None,
         if mode == "bm25":
             order, mode_scores = bm25_rank[:pool_n], bm25_scores
         elif mode == "hybrid":
+            # RRF treats each input list as an OPINION about relevance. BM25 is
+            # language-blind: for a Devanagari query it scores all chunks
+            # exactly 0.000, yet argsort of an all-zero array still returns an
+            # order — an arbitrary tie order — whose first entries then collect
+            # real 1/(RRF_K+rank) votes. A chunk dense ranked 5th and "ranked"
+            # 3rd by that accident beat one dense ranked 1st, which is how a
+            # Hindi gold document fell from dense rank 1 to hybrid rank 19,
+            # outside the rerank pool (decisions 021).
+            #
+            # So a retriever only votes if it actually discriminated. Silence
+            # is not a ranking. This is a no-op whenever BM25 scored anything
+            # at all, which is every English query — validated on the hardened
+            # dev set: Hindi hit@5 0.91 → 1.00, English unchanged at 1.00.
+            rankings = [dense_rank[:50]]
+            if bm25_scores.max() > 0:
+                rankings.append(bm25_rank[:50])
             fused: dict[int, float] = {}
-            for ranking in (dense_rank[:50], bm25_rank[:50]):
+            for ranking in rankings:
                 for rank, idx in enumerate(ranking):
                     fused[int(idx)] = fused.get(int(idx), 0.0) + 1.0 / (RRF_K + rank + 1)
             order = sorted(fused, key=fused.get, reverse=True)[:pool_n]

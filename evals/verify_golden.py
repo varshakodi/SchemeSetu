@@ -50,8 +50,23 @@ TRAP_SUBJECTS = {
 }
 
 
+# Function words carry no topic. Without removing them, two short Hindi
+# questions about entirely different schemes ("X कब शुरू की गई थी?" and
+# "Y कब शुरू की गई थी?") overlap on their skeleton alone and trip the check.
+_STOP = {
+    "the", "a", "an", "of", "for", "and", "or", "to", "in", "is", "are", "on",
+    "at", "by", "per", "with", "from", "as", "be", "it", "that", "this", "what",
+    "how", "much", "many", "who", "can", "do", "does", "i", "my", "you", "if",
+    "under", "get", "there", "any",
+    "का", "की", "के", "को", "में", "से", "है", "हैं", "और", "या", "पर", "एक",
+    "लिए", "कितना", "कितनी", "कितने", "क्या", "कब", "कहाँ", "होता", "होती",
+    "मिलता", "मिलती", "गई", "गया", "थी", "था", "यह", "जा", "सकता", "सकती",
+}
+
+
 def _words(text: str) -> set[str]:
-    return set(re.findall(r"[\w\u0900-\u097F]+", text.lower().replace(",", "")))
+    tokens = re.findall(r"[\w\u0900-\u097F]+", text.lower().replace(",", ""))
+    return {t for t in tokens if t not in _STOP}
 
 
 def load_corpus() -> dict[str, str]:
