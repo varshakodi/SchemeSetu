@@ -24,6 +24,7 @@ Usage:  python evals/run_agent_eval.py            # both sets
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -36,7 +37,14 @@ from agent.llm import PROVIDERS, OpenAICompatLLM, available_provider, get_llm  #
 from naive.rag import build_context  # noqa: E402
 from slices import split  # noqa: E402
 
-PAUSE_SECONDS = 2.0
+# Free tiers meter tokens per MINUTE, not just per day: Groq allows 8,000 TPM
+# on the generator, and one question costs roughly 2,000 across classify,
+# generate and verify. That is about four questions a minute, so a 2 s pause
+# guaranteed a 429 every few questions -- survivable now that the backoff
+# classifies throttles correctly, but each one is a wasted round-trip. Pace
+# instead of retrying. Override with SCHEMESETU_EVAL_PAUSE when a paid tier
+# or a different provider makes this unnecessary.
+PAUSE_SECONDS = float(os.environ.get("SCHEMESETU_EVAL_PAUSE", 14.0))
 
 
 def load_jsonl(path: Path) -> list[dict]:
@@ -281,7 +289,8 @@ def main() -> None:
     totals: dict[str, int] = {}
     for f in files:
         for k, v in evaluate(f, app, judges).items():
-            totals[k] = totals.get(k, 0) + v
+            if isinstance(v, (int, float)):   # 'incomplete_after' holds a question id
+                totals[k] = totals.get(k, 0) + v
 
     print("\n=== overall vs PRD §5 targets ===")
     if totals.get("traps"):

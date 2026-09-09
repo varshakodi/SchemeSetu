@@ -76,19 +76,27 @@ class OpenAICompatLLM:
         payload = {"model": self.model, "max_tokens": max(max_tokens, 512),
                    "messages": [{"role": "system", "content": system},
                                 {"role": "user", "content": user}]}
-        for attempt in range(4):
+        for attempt in range(6):
             resp = httpx.post(f"{self.base_url}/chat/completions",
                               headers=headers, timeout=120, json=payload)
-            if resp.status_code == 429 and attempt < 3:
+            if resp.status_code == 429 and attempt < 5:
                 # HTTP 429 comes in two species. A per-minute meter says
                 # "slow down" — waiting works. A DAILY quota says "come back
                 # tomorrow" — retrying is hopeless and stalls the caller for
                 # minutes before its fallback can engage. Distinguish them:
                 # a long Retry-After or an explicit quota message = terminal.
-                wait = float(resp.headers.get("retry-after", 5 * (attempt + 1)))
-                if wait > 30 or "quota" in resp.text.lower():
+                body = resp.text.lower()
+                # Read the species off the body, not off the wait length. Groq
+                # reports BOTH meters with a long retry-after ("try again in
+                # 51.84s"), so a >30s wait cannot separate them: a per-minute
+                # throttle was being treated as terminal and killing eval runs
+                # that only needed to slow down.
+                daily = any(k in body for k in
+                            ("per day", "tpd", "rpd", "quota", "billing"))
+                if daily:
                     break  # terminal — raise below so callers can fall back
-                time.sleep(wait)
+                wait = float(resp.headers.get("retry-after", 5 * (attempt + 1)))
+                time.sleep(min(wait, 65))
                 continue
             break
         if resp.status_code >= 400:
