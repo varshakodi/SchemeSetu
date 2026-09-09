@@ -44,33 +44,42 @@ def load_jsonl(path: Path) -> list[dict]:
 
 
 def make_judges() -> list[tuple]:
-    """Judges in preference order. Best: a DIFFERENT provider than the
-    generator (true independence). Fallback: same provider, different MODEL
-    (gpt-oss-20b judging gpt-oss-120b) — weaker independence, honestly
-    labelled. Free-tier quotas are per-day (Gemini: ~20 requests), so a judge
-    can die mid-run; the harness downgrades instead of crashing."""
+    """Judges in preference order, most independent first.
+
+    "Independent" means a different MODEL, not merely a different vendor's
+    API. Judging gpt-oss-120b's output with gpt-oss-120b served by someone
+    else is self-judging with extra steps -- same weights, same blind spots.
+    So the ordering is by model family first, provider second.
+
+    Free-tier facts, checked 9 Sept 2026 (these age -- re-check on failure):
+      gemini-3.6-flash   different provider AND family. Best evidence, but
+                         ~20 requests/day, short of the ~50 a full golden
+                         run needs -- it will die mid-run and be replaced.
+      qwen3.8-27b        different family, same provider as the generator.
+                         Groq meters tokens per DAY PER MODEL, so this does
+                         not compete with the generator's budget -- which is
+                         what makes a full pinned run finish at all.
+      gpt-oss-20b        same family, smaller. Weakest; last resort.
+      cerebras           deliberately absent: every model there, gpt-oss-120b
+                         included, returns 402 payment_required. No free tier.
+    """
     import os
     generator = available_provider()
     judges = []
 
-    # Tier 1: a DIFFERENT provider than the generator -- real independence,
-    # and its own token budget, which is what lets a full run finish. Free
-    # tiers meter separately: Gemini caps requests/day (20), Groq caps
-    # tokens/day (200k), so a judge on its own provider does not eat the
-    # generator's budget.
-    for name in ("cerebras", "gemini"):
-        key = os.environ.get(PROVIDERS[name]["key_env"])
-        if name != generator and key:
-            cfg = PROVIDERS[name]
-            judges.append((OpenAICompatLLM(cfg["base_url"], key, cfg["model"]), name))
-
-    # Tier 2: same provider, different model. Weaker independence, labelled.
-    if generator != "groq" or os.environ.get("GROQ_API_KEY"):
-        if os.environ.get("GROQ_API_KEY"):
-            cfg = PROVIDERS["groq"]
-            judges.append((OpenAICompatLLM(cfg["base_url"], os.environ["GROQ_API_KEY"],
-                                           "openai/gpt-oss-20b"),
-                           "groq:gpt-oss-20b (same-provider fallback)"))
+    if generator != "gemini" and os.environ.get("GEMINI_API_KEY"):
+        cfg = PROVIDERS["gemini"]
+        judges.append((OpenAICompatLLM(cfg["base_url"], os.environ["GEMINI_API_KEY"],
+                                       cfg["model"]),
+                       "gemini-3.6-flash (different provider and family)"))
+    if os.environ.get("GROQ_API_KEY"):
+        cfg = PROVIDERS["groq"]
+        judges.append((OpenAICompatLLM(cfg["base_url"], os.environ["GROQ_API_KEY"],
+                                       "qwen/qwen3.8-27b"),
+                       "qwen3.8-27b (different family, own token budget)"))
+        judges.append((OpenAICompatLLM(cfg["base_url"], os.environ["GROQ_API_KEY"],
+                                       "openai/gpt-oss-20b"),
+                       "gpt-oss-20b (same family as generator -- weakest)"))
     if not judges:
         judges.append((get_llm(), "generator itself (weakest evidence)"))
     return judges
