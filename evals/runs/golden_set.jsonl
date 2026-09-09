@@ -1,1 +1,2 @@
 {"id": "g-001", "kind": "answerable", "outcome": "answered", "rewrote": false, "gen_tokens": 2538, "answered": true, "cites_gold": true, "faithful": true, "reason": "PASS", "relevant": true, "judge": "qwen3.8-27b (different family, own token budget)", "judge_tokens": 1166}
+{"id": "g-002", "kind": "answerable", "outcome": "answered", "rewrote": false, "gen_tokens": 2505, "answered": true, "cites_gold": true, "faithful": true, "reason": "PASS", "relevant": true, "judge": "qwen3.8-27b (different family, own token budget)", "judge_tokens": 1153}

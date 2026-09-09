@@ -1,227 +1,201 @@
-# SchemeSetu
+<h1 align="center">SchemeSetu</h1>
 
-**Ask about Indian government schemes in plain language — get answers grounded in official documents, with citations, or an honest "I don't know."**
+<p align="center">
+  <strong>Bilingual question answering over Indian government welfare schemes —<br>
+  grounded in official documents, cited to the passage, and willing to say "I don't know."</strong>
+</p>
 
-[![CI](https://github.com/varshakodi/SchemeSetu/actions/workflows/ci.yml/badge.svg)](https://github.com/varshakodi/SchemeSetu/actions/workflows/ci.yml)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Evals](https://img.shields.io/badge/evals-tracked_every_phase-orange.svg)](evals/results.md)
+<p align="center">
+  <a href="https://schemesetu.streamlit.app"><strong>Live demo →</strong></a> ·
+  <a href="evals/results.md">Evaluation report</a> ·
+  <a href="decisions.md">Decision log</a> ·
+  <a href="PRD.md">Requirements</a>
+</p>
 
-**▶ Try it live: [schemesetu.streamlit.app](https://schemesetu.streamlit.app)** — ask in English or Hindi.
-Free hosting sleeps after ~12 hours idle, so the first visit takes a minute to wake, and an answer
-takes ~22 s on a shared CPU (1.3 s locally — see [`evals/results.md`](evals/results.md) row 7).
+<p align="center">
+  <a href="https://github.com/varshakodi/SchemeSetu/actions/workflows/ci.yml"><img src="https://github.com/varshakodi/SchemeSetu/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/python-3.11%2B-blue.svg" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/hosting-%E2%82%B90-brightgreen.svg" alt="Zero cost">
+  <img src="https://img.shields.io/badge/hit%405-0.96-success.svg" alt="hit@5 0.96">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT"></a>
+</p>
 
-SchemeSetu is a bilingual (English/Hindi) retrieval-augmented generation (RAG)
-system over official Indian government scheme documents — PM-KISAN, PMAY-G,
-Ayushman Bharat, scholarships, pensions and more. It is built
-**evaluation-first**: every architectural choice (chunking strategy, retrieval
-mode, reranking) is decided by measured before/after numbers on a frozen
-question set, and every decision is recorded with its evidence in
-[`decisions.md`](decisions.md).
+---
 
-## Why this exists
+India runs over 3,000 welfare schemes. Their eligibility rules, benefit amounts
+and document checklists sit in bureaucratic circulars spread across dozens of
+portals. A citizen acting on a wrong answer loses application fees and weeks of
+effort — so in this domain, **an honest refusal is worth more than a plausible
+answer**.
 
-- **3,000+ schemes, buried in PDFs.** Eligibility rules, benefit amounts and
-  document checklists live in circulars written in bureaucratic language,
-  scattered across dozens of portals.
-- **Wrong answers cost real money.** A citizen acting on a hallucinated
-  eligibility rule wastes application fees and weeks of effort. Grounding,
-  per-claim citations and *measured* refusal are therefore first-class
-  requirements here — not nice-to-haves.
-- **Existing tools don't cite.** myScheme offers browse/filter; per-scheme
-  chatbots exist (PM-KISAN's assistant, Ayushman Sarathi). SchemeSetu differs
-  in three ways: citations to the exact source passage, a tracked
-  honest-refusal rate on out-of-corpus questions, and a public eval report.
+SchemeSetu answers questions in English or Hindi from a corpus of official
+documents, cites the exact passage behind every claim, and declines when the
+corpus cannot support an answer. Refusal is treated as a measured requirement,
+not a fallback.
 
 ## What it looks like
 
 <p align="center">
-  <img src="docs/screenshots/01-home.png" width="820" alt="SchemeSetu home screen showing suggested questions in English and Hindi">
+  <img src="docs/screenshots/01-home.png" width="840" alt="SchemeSetu home screen with suggested questions in English and Hindi">
 </p>
 
-The empty state says what the assistant actually has: **23 official documents**,
-not "everything". Suggested questions are mixed English and Hindi, because the
-system is bilingual at the retrieval layer, not through a translate button.
+The interface states its own scope — 23 official documents, not "everything" —
+and takes questions in either language without a mode switch.
 
 <p align="center">
-  <img src="docs/screenshots/02-answer-and-trace.png" width="820" alt="A cited answer about PMAY-G with the reasoning trace expanded">
+  <img src="docs/screenshots/02-answer-and-trace.png" width="840" alt="A cited answer about PMAY-G with the reasoning trace expanded">
 </p>
 
-Every claim carries a citation marker. *How I found this* shows the agent's
-actual path — understood, searched, drafted from those documents only, checked
-every statement against the sources — in plain language rather than as a
-developer trace. A citizen deciding whether to trust an answer deserves to see
-how it was reached.
+Every claim carries a citation marker, and the agent's path is shown in plain
+language rather than as a developer trace.
 
 <p align="center">
-  <img src="docs/screenshots/03-citations.png" width="820" alt="The citation panel showing four source passages from the PMAY-G documents">
+  <img src="docs/screenshots/03-citations.png" width="840" alt="Citation panel showing four source passages from the PMAY-G documents">
 </p>
 
-*Where this comes from* opens the actual retrieved passages, each labelled with
-its document and section. The numbers in the answer map to the numbers here, so
-a claim can be checked against its source in one click. This is the difference
-between an answer and a *checkable* answer.
+Citations open to the retrieved passages themselves, labelled by document and
+section — the difference between an answer and a checkable one.
 
 <p align="center">
-  <img src="docs/screenshots/04-hindi.png" width="820" alt="A romanised Hindi statement answered in full Devanagari Hindi with citations">
+  <img src="docs/screenshots/04-hindi.png" width="840" alt="A romanised Hindi statement answered in Devanagari Hindi with citations">
 </p>
 
-The hardest case, working. The user typed **romanised Hindi** — *"mein ek low
-income kisan hu"* — which is not a question, not Devanagari, and not English.
-The answer comes back in full Hindi, correctly identifies PM-KISAN, lists the
-eligibility conditions and the ₹6,000 in three instalments, and cites the
-English source documents it drew from. Nothing was translated: BGE-M3 puts
-Hindi and English meaning in one vector space, so a Hindi query retrieves
-English passages directly (see [`decisions.md`](decisions.md) 015).
+Cross-lingual retrieval in practice. The input is romanised Hindi — *"mein ek
+low income kisan hu"* — neither Devanagari nor a question. The answer returns
+in Hindi with PM-KISAN's eligibility conditions and benefit structure, cited to
+**English** source documents. No translation step: BGE-M3 embeds both languages
+into one vector space, so Hindi queries retrieve English passages directly.
 
-## How it works
+## Architecture
 
 ```mermaid
 flowchart LR
-    Q[Question] --> D[Dense retrieval\nBGE-M3 multilingual]
-    Q --> B[BM25 keyword retrieval\nbuilt from scratch]
-    D --> F[Reciprocal\nRank Fusion]
+    Q[Question] --> C{Classify}
+    C -->|chitchat| DR[Direct reply]
+    C -->|out of domain| N[Refuse]
+    C -->|in domain| D[Dense retrieval<br/>BGE-M3 multilingual]
+    C -->|in domain| B[BM25<br/>implemented from scratch]
+    D --> F[Reciprocal Rank Fusion]
     B --> F
-    F --> R[Cross-encoder rerank\ntop 16 to top 4]
-    R --> T{Confidence\nthreshold}
-    T -->|above| G[Claude generates\ncited answer]
-    T -->|below| N[Honest refusal]
+    F --> R[Cross-encoder rerank<br/>top 16 to top 4]
+    R --> T{Evidence<br/>threshold}
+    T -->|weak| RW[Rewrite query, retry]
+    RW --> D
+    T -->|strong| G[Generate cited answer]
+    G --> V{Grounding check}
+    V -->|pass| A[Answer + citations]
+    V -->|fail| N
 ```
 
-Every stage is implemented **from scratch first** (see [`naive/`](naive/) —
-embedding search in plain NumPy, BM25 in ~60 lines) before any framework, so
-the repository doubles as a working tutorial on how RAG actually works under
-the hood. Frameworks (LangChain/LangGraph) enter only where they earn their
-keep — see the roadmap.
+Two-stage retrieval: hybrid search nominates candidates for recall, a
+cross-encoder re-scores them for precision. The agent is a LangGraph state
+machine with three independent refusal layers — an evidence threshold, a
+generator that returns `NO_ANSWER` when topically close passages lack the
+answer, and a verifier that rejects answers about a different scheme than the
+one asked.
 
-## Evaluation-driven development
+Every retrieval component is implemented from scratch in [`naive/`](naive/) —
+BM25 in under 100 lines, vector search in NumPy — before any framework is
+introduced.
 
-The headline numbers come from a **frozen golden set of 68 questions** — 33
-factual, 10 multi-document synthesis, 10 Hindi, 10 out-of-corpus traps and 5
-deliberately underspecified. It was written from the corpus, verified by its
-own test suite, frozen, and run once.
+## Results
 
-| Metric | Result | Target (PRD §5) | |
-|---|---|---|---|
-| hit@5 | **0.96** (51/53) | ≥ 0.85 | ✓ |
-| MRR@10 | **0.925** | — | |
-| Trap refusal | **1.00** (10/10) | ≥ 0.90 | ✓ |
-| Cites the gold document | 48/49 *(full set)* | — | |
-| False refusal | 0.08 *(full set, agent-level)* | ≤ 0.10 | ✓ |
-| Faithfulness | *not yet validly measured* | ≥ 0.90 | see below |
+Measured on a **frozen 68-question benchmark** covering single-document facts,
+multi-document synthesis, Hindi, out-of-corpus traps and underspecified
+questions. The set is held out from all tuning; parameters are tuned on a
+separate development set.
 
-Measured on **golden v2** — 68 questions, none of which overlaps the dev set the
-system was tuned on. v1 contained 16 duplicates and is withdrawn; see *What the
-golden set caught*, below. Rows marked *(full set)* await a clean agent re-run.
-
-Tuning happened on a separate dev set, never on these questions. That
-separation is the whole point: numbers from a set you tuned against describe
-how well the system does on questions it was already optimised for.
-
-| Retrieval mode (dev set, tuning evidence) | hit@5 | MRR@10 |
+| Metric | Result | Target |
 |---|---|---|
-| Dense embeddings only | 0.93 | 0.940 |
-| BM25 only | 0.93 | 0.929 |
-| **Hybrid — dense + BM25, RRF fusion (shipped)** | **1.00** | 0.917 |
+| Retrieval hit@5 | **0.96** | ≥ 0.85 ✓ |
+| MRR@10 | **0.925** | — |
+| Out-of-corpus refusal | **1.00** | ≥ 0.90 ✓ |
+| Hindi vs English parity | **+4.9%** | within 10% ✓ |
+| Cost per query | **₹0** | ≤ ₹1 ✓ |
+| Latency, p50 | 22 s hosted · 1.3 s local | ≤ 3 s ✗ |
 
-The two retrievers fail in complementary ways — BM25 cannot find a paraphrase
-with zero word overlap; embeddings blur exact names — and fusion covers both.
+Latency is bound by a shared free-tier vCPU running a 568M-parameter
+cross-encoder, not by the algorithm; the same work takes 1.3 s locally.
 
-### What the golden set caught
+Selected results across build phases:
 
-Freezing a real question set found three things the saturated dev set could
-not. All are documented rather than quietly fixed.
+| Change | Effect |
+|---|---|
+| Structure-aware chunking over fixed windows | MRR 0.929 → 1.000 on dev |
+| Hybrid retrieval over dense-only | hit@5 0.93 → 1.00 on dev |
+| Cross-encoder reranking | MRR 0.917 → 1.000; every gold document at rank 1 |
+| BGE-M3 over English-only embeddings | Hindi MRR 0.458 → 1.000, and English improved |
+| Rank-fusion guard for non-discriminating retrievers | Hindi hit@5 0.91 → 1.00 |
 
-**The evaluation set leaked, and the check that finds it is now automated.**
-16 of the 68 golden questions were near-duplicates of dev-set questions — 8
-word-for-word. The dev set is what chunking, `RERANK_POOL` and the refusal
-threshold were tuned against, so those questions measured a system already
-optimised for them. Drafting "from the corpus" was not enough: the same corpus
-produces the same obvious questions twice. The 16 were replaced with corpus
-facts neither set had touched, and v2 measures **0.94 / 0.909 — identical to the
-contaminated v1**. All three failures were clean questions in both sets, so the
-leakage changed the methodology, not the outcome. It deserved fixing on
-principle, not because it flattered the result. The original row is withdrawn
-rather than deleted, and `evals/verify_golden.py` now fails any golden question
-sharing more than half its words with a dev question. See
-[`decisions.md`](decisions.md) 024.
+The full phase-by-phase table is in [`evals/results.md`](evals/results.md);
+every architectural choice, its alternatives and its measured evidence are
+recorded in [`decisions.md`](decisions.md).
 
-**Rank fusion could not tell silence from a vote — found, then fixed.** A Hindi
-question's gold document sat at *dense rank 1* and *hybrid rank 19*, outside the
-rerank pool, so the cross-encoder never scored it. BM25 is language-blind and
-scores every chunk exactly 0.000 for a Devanagari query — but sorting an
-all-zero array still yields an order, and RRF handed that arbitrary order real
-weight. Noise outvoted a correct hit.
+## Engineering notes
 
-The fix is one condition: a retriever only votes if it actually discriminated.
-It could not be validated at first, because the dev set was saturated at 1.00
-and scored identically either way. So the dev set was hardened (21 → 33
-questions, weighted to Hindi and thin documents), which separated them cleanly:
-Hindi hit@5 0.91 → 1.00, English unchanged. Shipped, and golden v2 re-measured
-at **0.96 / 0.925**. See [`decisions.md`](decisions.md) 021 and 025.
+- **Rank fusion treats every input as an opinion.** BM25 scores every chunk
+  identically for a Devanagari query, yet its arbitrary tie-order still earned
+  fusion weight and could outrank a correct dense hit. Retrievers now vote only
+  when they discriminate.
+- **The evaluation set has its own test suite.** `evals/verify_golden.py`
+  checks that every cited document exists, every figure in an answer appears in
+  the documents it cites, every trap subject is genuinely absent from the
+  corpus, and no benchmark question overlaps the tuning set.
+- **Provider-agnostic LLM seam.** One interface spans Anthropic, Groq, Gemini,
+  Cerebras and local Ollama, with rate-limit handling that distinguishes
+  per-minute throttles from daily quotas. Switching providers is configuration.
+- **Evaluation runs are resumable.** Per-question results persist as they
+  complete, so a run interrupted by a free-tier quota continues rather than
+  restarting.
 
-**A judge that dies mid-run silently changes the metric.** Faithfulness first
-read 0.84, under target. The cause was not the system: the primary judge's
-free tier allows 20 requests/day, so it graded the first ~20 answers, hit
-quota, and was silently replaced by a fallback — different questions graded by
-judges of different strictness. Hand-checking found the "failures" correct and
-well grounded. The harness now records which judge graded each answer, keeps
-the reason it used to discard, warns when the judge changes mid-run, and
-accepts `--judge` to pin one. The number is reported as unmeasured until a
-single-judge run completes, rather than quoting a figure known to be invalid.
-See [`decisions.md`](decisions.md) 022.
+## Stack
 
-The full phase-by-phase table lives in [`evals/results.md`](evals/results.md).
-The methodology — frozen golden set, separate dev set, metric definitions, and
-the test suite that checks the answer key itself — is in
-[`evals/README.md`](evals/README.md).
+Python 3.11 · BGE-M3 embeddings · BGE reranker v2-m3 · LangGraph · Streamlit ·
+NumPy · Groq / Gemini / Anthropic / Ollama · pytest · GitHub Actions
 
 ## Quickstart
 
 ```bash
 git clone https://github.com/varshakodi/SchemeSetu.git && cd SchemeSetu
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements-dev.txt   # runtime deps + tests/eval tooling
+pip install -r requirements-dev.txt
 
-python ingest/parse.py        # extract text from any PDFs in data/raw
-python naive/rag.py index     # chunk + embed the corpus
+python ingest/parse.py        # extract text from source PDFs
+python naive/rag.py index     # chunk and embed the corpus
 python naive/rag.py ask "Who is eligible for PM-KISAN?"
 ```
 
-Or just `./demo.sh`, which preflights everything (`scripts/doctor.py`) and launches the UI.
+`./demo.sh` runs a preflight check ([`scripts/doctor.py`](scripts/doctor.py) —
+dependencies, corpus, index freshness, cached models, a live retrieval and a
+live LLM call) and launches the UI.
 
-Retrieval runs fully offline. Generating grounded, cited answers needs an LLM
-provider — **including fully free options** (Groq, Gemini, Cerebras free
-tiers, or a local Ollama): set the matching key env var and everything picks
-it up automatically via the provider seam in [`agent/llm.py`](agent/llm.py)
-(`LLM_PROVIDER` forces a choice; `ANTHROPIC_API_KEY` enables the PRD-default
-Claude). Run the eval suite with `python evals/run_eval.py`, and the unit
-tests with `pytest`.
+Retrieval runs fully offline. Generation needs an LLM provider; free tiers are
+supported — set the matching environment variable and
+[`agent/llm.py`](agent/llm.py) picks it up.
 
-
-Full product requirements: [`PRD.md`](PRD.md)
+```bash
+python evals/run_eval.py         # retrieval metrics
+python evals/run_agent_eval.py   # full agent, LLM-judged
+pytest                           # unit tests
+```
 
 ## Repository layout
 
 ```
-PRD.md              product requirements — the contract for this build
-decisions.md        every technical decision, with alternatives and evidence
-naive/              from-scratch implementations: RAG pipeline, BM25
-ingest/             corpus loading, cleaning, chunking strategies, PDF parsing
-data/registry.csv   provenance for every corpus document (source, date, status)
-evals/              golden/dev sets, metric definitions, per-phase results
+naive/              retrieval pipeline and BM25, implemented from scratch
 agent/              LangGraph state machine and the provider-agnostic LLM seam
-docs/               interview notes, plus the screenshots used above
+ingest/             parsing, cleaning and chunking strategies
+evals/              benchmark, dev set, harnesses, per-phase results
+data/registry.csv   provenance for every corpus document
 deploy/             deployment bundle and walkthrough
-scripts/doctor.py   preflight check — deps, corpus, models, a live query
-tests/              unit tests (run in CI)
+scripts/doctor.py   preflight diagnostics
+tests/              unit tests, run in CI
+docs/               screenshots and reference notes
 ```
 
-The corpus itself is not committed — it is rebuildable from the source URLs
-in the registry, which also records how complete each captured document is.
+The corpus is not committed; it is rebuildable from the source URLs in the
+registry, which also records the completeness of each captured document.
 
 ## License
 
-[MIT](LICENSE) — the corpus documents are Government of India publications
-accessed from public portals; see `data/registry.csv` for per-document
-provenance.
+[MIT](LICENSE). Corpus documents are Government of India publications.
