@@ -59,6 +59,29 @@ PROVIDERS: dict[str, dict] = {
 }
 
 
+DAILY_QUOTA_MARKERS = (
+    "per day", "(tpd)", "(rpd)", "quota exceeded", "exceeded your current quota",
+)
+
+
+def is_daily_quota(body: str) -> bool:
+    """Does this 429 mean "come back tomorrow" rather than "slow down"?
+
+    HTTP 429 covers two situations whose correct responses are opposite: a
+    per-minute meter clears by waiting, a daily one never does, and retrying
+    it stalls the caller for minutes before a fallback can engage.
+
+    Two plausible signals have both misled this code. Wait length does not
+    separate them -- Groq reports its per-minute limit with "try again in
+    51.84s" as well. Nor do the words "billing" or bare "quota": every Groq
+    429 ends with "Upgrade to Dev Tier today at .../settings/billing", so
+    matching those marks every throttle terminal. Only phrases naming a daily
+    meter count. Covered by tests/test_rate_limits.py against real bodies.
+    """
+    body = body.lower()
+    return any(marker in body for marker in DAILY_QUOTA_MARKERS)
+
+
 class OpenAICompatLLM:
     """Minimal client for any OpenAI-compatible /chat/completions endpoint."""
 
@@ -80,20 +103,7 @@ class OpenAICompatLLM:
             resp = httpx.post(f"{self.base_url}/chat/completions",
                               headers=headers, timeout=120, json=payload)
             if resp.status_code == 429 and attempt < 5:
-                # HTTP 429 comes in two species. A per-minute meter says
-                # "slow down" — waiting works. A DAILY quota says "come back
-                # tomorrow" — retrying is hopeless and stalls the caller for
-                # minutes before its fallback can engage. Distinguish them:
-                # a long Retry-After or an explicit quota message = terminal.
-                body = resp.text.lower()
-                # Read the species off the body, not off the wait length. Groq
-                # reports BOTH meters with a long retry-after ("try again in
-                # 51.84s"), so a >30s wait cannot separate them: a per-minute
-                # throttle was being treated as terminal and killing eval runs
-                # that only needed to slow down.
-                daily = any(k in body for k in
-                            ("per day", "tpd", "rpd", "quota", "billing"))
-                if daily:
+                if is_daily_quota(resp.text):
                     break  # terminal — raise below so callers can fall back
                 wait = float(resp.headers.get("retry-after", 5 * (attempt + 1)))
                 time.sleep(min(wait, 65))
