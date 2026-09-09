@@ -64,6 +64,16 @@ DAILY_QUOTA_MARKERS = (
 )
 
 
+# Running totals of tokens spent, so the eval harness can report cost per
+# question (PRD §5). Module-level because every provider funnels through this
+# file; the caller resets it per question.
+USAGE = {"prompt": 0, "completion": 0}
+
+
+def reset_usage() -> None:
+    USAGE["prompt"] = USAGE["completion"] = 0
+
+
 def is_daily_quota(body: str) -> bool:
     """Does this 429 mean "come back tomorrow" rather than "slow down"?
 
@@ -113,7 +123,11 @@ class OpenAICompatLLM:
             # Status codes alone don't debug anything — surface the body.
             raise RuntimeError(
                 f"{self.base_url} returned {resp.status_code}: {resp.text[:400]}")
-        message = resp.json()["choices"][0]["message"]
+        payload_out = resp.json()
+        usage = payload_out.get("usage") or {}
+        USAGE["prompt"] += usage.get("prompt_tokens", 0)
+        USAGE["completion"] += usage.get("completion_tokens", 0)
+        message = payload_out["choices"][0]["message"]
         return (message.get("content") or "").strip()
 
 

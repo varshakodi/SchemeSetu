@@ -33,7 +33,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from agent.graph import build_graph  # noqa: E402
-from agent.llm import PROVIDERS, OpenAICompatLLM, available_provider, get_llm  # noqa: E402
+from agent.llm import (  # noqa: E402
+    PROVIDERS, USAGE, OpenAICompatLLM, available_provider, get_llm, reset_usage)
 from naive.rag import build_context  # noqa: E402
 from slices import split  # noqa: E402
 
@@ -134,6 +135,29 @@ def judge_ambiguous(judges: list, question: str, criterion: str, response: str):
     return None, None, ""
 
 
+def judge_relevance(judges: list, question: str, answer: str):
+    """Does the answer address the question that was asked? (PRD §5, >= 0.85)
+
+    Distinct from faithfulness. An answer can be perfectly grounded in the
+    retrieved passages and still answer a different question than the user
+    asked -- that is what the near-miss traps look like when they slip
+    through. Faithfulness checks claims against context; this checks the
+    answer against the question.
+    """
+    for judge, name in list(judges):
+        try:
+            verdict = judge.complete(
+                "Reply PASS if the answer addresses the question that was "
+                "asked, or appropriately declines when it cannot. Reply FAIL "
+                "if it answers a different question. First line PASS or FAIL.",
+                f"Question:\n{question}\n\nAnswer:\n{answer}", max_tokens=80)
+            return verdict.strip().upper().startswith("PASS")
+        except Exception:
+            judges.remove((judge, name))
+            continue
+    return None
+
+
 def judge_faithfulness(judges: list, hits: list[dict], answer: str):
     """Return (True/False, judge_name, reason), or (None, None, "") if all down.
 
@@ -161,114 +185,177 @@ def judge_faithfulness(judges: list, hits: list[dict], answer: str):
     return None, None, ""
 
 
-def evaluate(path: Path, app, judges: list) -> dict:
+def results_path(path: Path) -> Path:
+    return ROOT / "evals" / "runs" / f"{path.stem}.jsonl"
+
+
+def load_done(path: Path) -> dict[str, dict]:
+    """Per-question results already recorded, keyed by question id.
+
+    A full pass costs about 140k generator tokens against a free tier that
+    allows 200k a day and refills on a rolling window, so a run interrupted by
+    quota cannot simply be restarted -- it would spend the next day's budget
+    redoing work. Completed questions are written as they finish and skipped
+    on resume. The system and the pinned judge are unchanged between sessions;
+    the assembled date range is reported so the reader can see it was not one
+    sitting.
+    """
+    p = results_path(path)
+    if not p.exists():
+        return {}
+    return {r["id"]: r for r in
+            (json.loads(line) for line in p.read_text().splitlines() if line.strip())}
+
+
+def record(path: Path, row: dict) -> None:
+    p = results_path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with p.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def evaluate(path: Path, app, judges: list, resume: bool = False) -> dict:
     rows = load_jsonl(path)
+    done = load_done(path) if resume else {}
     answerable, traps, ambiguous = split(rows)
     kind = {r["id"]: k for group, k in
             ((answerable, "answerable"), (traps, "trap"), (ambiguous, "ambiguous"))
             for r in group}
-    stats = {"traps": 0, "traps_refused": 0, "ans": 0, "false_refusals": 0,
-             "cites_gold": 0, "faithful": 0, "answered": 0, "judged": 0,
-             "rewrites": 0, "ambig": 0, "ambig_ok": 0, "ambig_judged": 0,
-             "errors": 0, "attempted": 0}
 
     judges_used: set[str] = set()
-    unfaithful: list[tuple[str, str, str]] = []
+    recs: list[dict] = []
+    stopped_at = None
+
     print(f"\n=== {path.name} — full agent, judges={[n for _, n in judges]} ===")
+    if done:
+        print(f"  resuming: {len(done)} already recorded, re-using them")
+
     for r in rows:
+        if r["id"] in done:
+            recs.append(done[r["id"]])
+            continue
+
+        reset_usage()
         try:
             state = app.invoke({"question": r["question"], "path": []})
         except Exception as exc:
-            # A free-tier daily quota can die mid-run. Losing every completed
-            # question to one exception is unaffordable here: a full pass over
-            # this set costs most of a day's token budget, so partial results
-            # are worth keeping and labelling rather than discarding.
-            stats["errors"] += 1
+            # A free-tier daily budget dies mid-run, and a full pass costs most
+            # of one. Stop cleanly; everything already recorded survives on
+            # disk and --resume picks up here rather than paying for it twice.
             print(f"  {r['id']:<9} STOPPED — {type(exc).__name__}: "
-                  f"{' '.join(str(exc).split())[:400]}")  # full body: it names the meter
-            stats["incomplete_after"] = r["id"]
+                  f"{' '.join(str(exc).split())[:400]}")
+            stopped_at = r["id"]
             break
-        stats["attempted"] += 1
-        result = outcome(state)
-        answered = result == "answered"
-        rewrote = any(step.startswith("rewrite") for step in state["path"])
-        stats["rewrites"] += rewrote
+        gen_tokens = USAGE["prompt"] + USAGE["completion"]
 
-        if kind[r["id"]] == "trap":
-            stats["traps"] += 1
-            stats["traps_refused"] += (not answered)
-            verdict = "refused ✓" if not answered else "ANSWERED ✗ (should refuse)"
-        elif kind[r["id"]] == "ambiguous":
-            stats["ambig"] += 1
-            ok, judge_name, why = judge_ambiguous(
+        rec = {"id": r["id"], "kind": kind[r["id"]], "outcome": outcome(state),
+               "rewrote": any(s.startswith("rewrite") for s in state["path"]),
+               "gen_tokens": gen_tokens}
+        answered = rec["outcome"] == "answered"
+
+        if rec["kind"] == "trap":
+            rec["ok"] = not answered
+            verdict = "refused ✓" if rec["ok"] else "ANSWERED ✗ (should refuse)"
+        elif rec["kind"] == "ambiguous":
+            ok, jname, why = judge_ambiguous(
                 judges, r["question"], r["answer"], state.get("response", ""))
-            if ok is None:
-                verdict = "ambiguous — unjudged (all judges down)"
-            else:
-                stats["ambig_judged"] += 1
-                stats["ambig_ok"] += ok
-                verdict = f"ambiguous — {'handled ✓' if ok else 'CONFIDENT ✗'} ({why.splitlines()[-1][:70]})"
+            rec["ok"], rec["reason"] = ok, why[:200]
+            if jname:
+                judges_used.add(jname)
+            verdict = ("ambiguous — unjudged" if ok is None else
+                       f"ambiguous — {'handled ✓' if ok else 'CONFIDENT ✗'}")
         else:
-            stats["ans"] += 1
-            if not answered:
-                stats["false_refusals"] += 1
-                verdict = "REFUSED ✗ (should answer)"
-            else:
-                stats["answered"] += 1
-                cited = any(g in state["response"].split("Sources:")[-1]
-                            for g in r["gold_doc_ids"])
-                stats["cites_gold"] += cited
-                faithful, judge_name, reason = judge_faithfulness(
+            rec["answered"] = answered
+            if answered:
+                rec["cites_gold"] = any(
+                    g in state["response"].split("Sources:")[-1]
+                    for g in r["gold_doc_ids"])
+                faithful, jname, reason = judge_faithfulness(
                     judges, state["hits"], state["response"])
-                if judge_name:
-                    judges_used.add(judge_name)
-                if faithful is None:
-                    f_mark = "unjudged (all judges down)"
-                else:
-                    stats["judged"] += 1
-                    stats["faithful"] += faithful
-                    f_mark = f"faithful={'✓' if faithful else '✗'}"
-                    if not faithful:
-                        unfaithful.append((r["id"], judge_name, reason))
-                verdict = f"answered — cites_gold={'✓' if cited else '✗'} {f_mark}"
-        rw = " [rewrote]" if rewrote else ""
-        print(f"  {r['id']:<9} {verdict}{rw}")
+                rec["faithful"], rec["reason"] = faithful, reason[:200]
+                rec["relevant"] = judge_relevance(
+                    judges, r["question"], state["response"])
+                if jname:
+                    judges_used.add(jname)
+                    rec["judge"] = jname
+                verdict = (f"answered — cites_gold={'✓' if rec['cites_gold'] else '✗'} "
+                           f"faithful={'?' if faithful is None else '✓' if faithful else '✗'} "
+                           f"relevant={'?' if rec['relevant'] is None else '✓' if rec['relevant'] else '✗'}")
+            else:
+                verdict = "REFUSED ✗ (should answer)"
+
+        rec["judge_tokens"] = USAGE["prompt"] + USAGE["completion"] - gen_tokens
+        recs.append(rec)
+        record(path, rec)
+        print(f"  {r['id']:<9} {verdict}{' [rewrote]' if rec['rewrote'] else ''}")
         time.sleep(PAUSE_SECONDS)
 
-    if stats.get("errors"):
-        print(f"\n  INCOMPLETE RUN: stopped at {stats.get('incomplete_after')} "
-              f"after {stats['attempted']}/{len(rows)} questions. The rates below "
-              f"are computed over what completed and are NOT comparable with a "
-              f"full run — re-run when quota allows.")
-    if stats["traps"]:
-        print(f"\n  trap refusal   = {stats['traps_refused']}/{stats['traps']}")
-    if stats["ambig"]:
-        print(f"  ambiguous ok   = {stats['ambig_ok']}/{stats['ambig_judged']} "
-              f"({stats['ambig'] - stats['ambig_judged']} unjudged)")
-    if stats["ans"]:
-        print(f"  false refusal  = {stats['false_refusals']}/{stats['ans']}")
-    if stats["answered"]:
-        print(f"  cites gold doc = {stats['cites_gold']}/{stats['answered']}")
-        print(f"  faithfulness   = {stats['faithful']}/{stats['judged']} "
-              f"({stats['answered'] - stats['judged']} unjudged)")
-        if unfaithful:
+    return summarise(path, rows, recs, judges_used, stopped_at)
+
+
+def summarise(path, rows, recs, judges_used, stopped_at) -> dict:
+    """Aggregate whatever has been recorded, resumed entries included."""
+    def where(**kw):
+        return [r for r in recs if all(r.get(k) == v for k, v in kw.items())]
+
+    traps = where(kind="trap")
+    ambig = where(kind="ambiguous")
+    ans = [r for r in recs if r["kind"] == "answerable"]
+    answered = [r for r in ans if r.get("answered")]
+    judged_f = [r for r in answered if r.get("faithful") is not None]
+    judged_r = [r for r in answered if r.get("relevant") is not None]
+    judged_a = [r for r in ambig if r.get("ok") is not None]
+
+    if stopped_at or len(recs) < len(rows):
+        print(f"\n  INCOMPLETE: {len(recs)}/{len(rows)} recorded"
+              + (f", stopped at {stopped_at}" if stopped_at else "")
+              + ". Re-run with --resume to continue; recorded questions are "
+                "kept and will not be paid for twice.")
+
+    if traps:
+        print(f"\n  trap refusal   = {sum(r['ok'] for r in traps)}/{len(traps)}")
+    if judged_a:
+        print(f"  ambiguous ok   = {sum(bool(r['ok']) for r in judged_a)}/{len(judged_a)}")
+    if ans:
+        print(f"  false refusal  = {len(ans) - len(answered)}/{len(ans)}")
+    if answered:
+        print(f"  cites gold doc = {sum(bool(r.get('cites_gold')) for r in answered)}/{len(answered)}")
+    if judged_f:
+        print(f"  faithfulness   = {sum(r['faithful'] for r in judged_f)}/{len(judged_f)}")
+        bad = [r for r in judged_f if not r["faithful"]]
+        if bad:
             print("\n  judged unfaithful:")
-            for qid, jname, reason in unfaithful:
-                print(f"    {qid}  [{jname}]  {reason[:150]}")
-        if len(judges_used) > 1:
-            print(
-                "\n  WARNING: more than one judge ran during this file "
-                f"({', '.join(sorted(judges_used))}). A free-tier judge that dies "
-                "mid-run is silently replaced by the next one, so the faithfulness "
-                "score above mixes judges of different strictness and is NOT a "
-                "single measurement. Re-run pinned to one judge: --judge <name>."
-            )
-    print(f"  rewrite loop used on {stats['rewrites']} question(s)")
-    return stats
+            for r in bad:
+                print(f"    {r['id']}  [{r.get('judge','?')}]  {r.get('reason','')[:140]}")
+    if judged_r:
+        print(f"  answer relevance = {sum(r['relevant'] for r in judged_r)}/{len(judged_r)}")
+
+    tokens = sum(r.get("gen_tokens", 0) + r.get("judge_tokens", 0) for r in recs)
+    if tokens and recs:
+        print(f"\n  tokens = {tokens:,} over {len(recs)} questions "
+              f"({tokens / len(recs):,.0f}/question) · cost ₹0 (free tiers)")
+    print(f"  rewrite loop used on {sum(bool(r.get('rewrote')) for r in recs)} question(s)")
+    if len(judges_used) > 1:
+        print(f"\n  WARNING: more than one judge ran ({', '.join(sorted(judges_used))}). "
+              "The scores above mix judges of different strictness and are NOT a "
+              "single measurement. Re-run pinned with --judge <name>.")
+
+    return {"recorded": len(recs), "total": len(rows),
+            "traps": len(traps), "traps_refused": sum(r["ok"] for r in traps),
+            "ans": len(ans), "false_refusals": len(ans) - len(answered),
+            "answered": len(answered),
+            "cites_gold": sum(bool(r.get("cites_gold")) for r in answered),
+            "judged": len(judged_f), "faithful": sum(r["faithful"] for r in judged_f),
+            "rel_judged": len(judged_r), "relevant": sum(r["relevant"] for r in judged_r),
+            "ambig_judged": len(judged_a), "ambig_ok": sum(bool(r["ok"]) for r in judged_a),
+            "tokens": tokens}
 
 
 def main() -> None:
     args = sys.argv[1:]
+    resume = "--resume" in args
+    if resume:
+        args.remove("--resume")
     pinned = None
     if "--judge" in args:
         i = args.index("--judge")
@@ -288,7 +375,7 @@ def main() -> None:
     app = build_graph()
     totals: dict[str, int] = {}
     for f in files:
-        for k, v in evaluate(f, app, judges).items():
+        for k, v in evaluate(f, app, judges, resume=resume).items():
             if isinstance(v, (int, float)):   # 'incomplete_after' holds a question id
                 totals[k] = totals.get(k, 0) + v
 
@@ -306,9 +393,21 @@ def main() -> None:
         print(f"  ambiguous     {rate:.2f}  (no PRD target — measures a known "
               f"gap: the agent has no clarify path)")
     if totals.get("judged"):
-        print(f"  faithfulness  {totals['faithful'] / totals['judged']:.2f}  "
-              f"on {totals['judged']}/{totals['answered']} judged "
-              f"(target >= 0.90 once measured on the frozen golden set)")
+        rate = totals["faithful"] / totals["judged"]
+        print(f"  faithfulness  {rate:.2f}  (target >= 0.90) "
+              f"{'✓' if rate >= 0.90 else '✗'}  on {totals['judged']}/"
+              f"{totals['answered']} answered")
+    if totals.get("rel_judged"):
+        rate = totals["relevant"] / totals["rel_judged"]
+        print(f"  answer relev. {rate:.2f}  (target >= 0.85) "
+              f"{'✓' if rate >= 0.85 else '✗'}  on {totals['rel_judged']} answers")
+    if totals.get("tokens") and totals.get("recorded"):
+        per = totals["tokens"] / totals["recorded"]
+        print(f"  cost          ₹0 (free tiers) · {per:,.0f} tokens/question, "
+              f"{totals['tokens']:,} total")
+    if totals.get("recorded", 0) < totals.get("total", 0):
+        print(f"\n  {totals['recorded']}/{totals['total']} questions recorded — "
+              "re-run with --resume when the token budget refills.")
 
 
 if __name__ == "__main__":
