@@ -52,15 +52,25 @@ def make_judges() -> list[tuple]:
     import os
     generator = available_provider()
     judges = []
-    if generator != "gemini" and os.environ.get("GEMINI_API_KEY"):
-        cfg = PROVIDERS["gemini"]
-        judges.append((OpenAICompatLLM(cfg["base_url"], os.environ["GEMINI_API_KEY"],
-                                       cfg["model"]), "gemini"))
-    if os.environ.get("GROQ_API_KEY"):
-        cfg = PROVIDERS["groq"]
-        judges.append((OpenAICompatLLM(cfg["base_url"], os.environ["GROQ_API_KEY"],
-                                       "openai/gpt-oss-20b"),
-                       "groq:gpt-oss-20b (same-provider fallback)"))
+
+    # Tier 1: a DIFFERENT provider than the generator -- real independence,
+    # and its own token budget, which is what lets a full run finish. Free
+    # tiers meter separately: Gemini caps requests/day (20), Groq caps
+    # tokens/day (200k), so a judge on its own provider does not eat the
+    # generator's budget.
+    for name in ("cerebras", "gemini"):
+        key = os.environ.get(PROVIDERS[name]["key_env"])
+        if name != generator and key:
+            cfg = PROVIDERS[name]
+            judges.append((OpenAICompatLLM(cfg["base_url"], key, cfg["model"]), name))
+
+    # Tier 2: same provider, different model. Weaker independence, labelled.
+    if generator != "groq" or os.environ.get("GROQ_API_KEY"):
+        if os.environ.get("GROQ_API_KEY"):
+            cfg = PROVIDERS["groq"]
+            judges.append((OpenAICompatLLM(cfg["base_url"], os.environ["GROQ_API_KEY"],
+                                           "openai/gpt-oss-20b"),
+                           "groq:gpt-oss-20b (same-provider fallback)"))
     if not judges:
         judges.append((get_llm(), "generator itself (weakest evidence)"))
     return judges
