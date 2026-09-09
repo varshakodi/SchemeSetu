@@ -143,6 +143,10 @@ naive/              from-scratch implementations: RAG pipeline, BM25
 ingest/             corpus loading, cleaning, chunking strategies, PDF parsing
 data/registry.csv   provenance for every corpus document (source, date, status)
 evals/              golden/dev sets, metric definitions, per-phase results
+agent/              LangGraph state machine and the provider-agnostic LLM seam
+docs/               interview notes: pitch, definitions, the debugging stories
+deploy/             deployment bundle and walkthrough
+scripts/doctor.py   preflight check — deps, corpus, models, a live query
 tests/              unit tests (run in CI)
 ```
 
