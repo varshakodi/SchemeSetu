@@ -108,7 +108,12 @@ def judge_ambiguous(judges: list, question: str, criterion: str, response: str):
 
 
 def judge_faithfulness(judges: list, hits: list[dict], answer: str):
-    """Return (True/False, judge_name) or (None, None) if every judge is down."""
+    """Return (True/False, judge_name, reason), or (None, None, "") if all down.
+
+    The reason is kept because a faithfulness score without it is unactionable:
+    when this metric missed its target, the first question was "which claim was
+    unsupported?" and the harness had thrown that away.
+    """
     for judge, name in list(judges):
         try:
             verdict = judge.complete(
@@ -119,13 +124,14 @@ def judge_faithfulness(judges: list, hits: list[dict], answer: str):
                 "numbered passages.",
                 f"Context passages:\n{build_context(hits)}\n\nAnswer:\n{answer}",
                 max_tokens=150)
-            return verdict.strip().upper().startswith("PASS"), name
+            return (verdict.strip().upper().startswith("PASS"), name,
+                    " ".join(verdict.split())[:200])
         except Exception:
             # Dead for this run (daily quota, outage) — remove it so later
             # questions don't pay its failure latency again.
             judges.remove((judge, name))
             continue
-    return None, None
+    return None, None, ""
 
 
 def evaluate(path: Path, app, judges: list) -> dict:
@@ -136,11 +142,26 @@ def evaluate(path: Path, app, judges: list) -> dict:
             for r in group}
     stats = {"traps": 0, "traps_refused": 0, "ans": 0, "false_refusals": 0,
              "cites_gold": 0, "faithful": 0, "answered": 0, "judged": 0,
-             "rewrites": 0, "ambig": 0, "ambig_ok": 0, "ambig_judged": 0}
+             "rewrites": 0, "ambig": 0, "ambig_ok": 0, "ambig_judged": 0,
+             "errors": 0, "attempted": 0}
 
+    judges_used: set[str] = set()
+    unfaithful: list[tuple[str, str, str]] = []
     print(f"\n=== {path.name} — full agent, judges={[n for _, n in judges]} ===")
     for r in rows:
-        state = app.invoke({"question": r["question"], "path": []})
+        try:
+            state = app.invoke({"question": r["question"], "path": []})
+        except Exception as exc:
+            # A free-tier daily quota can die mid-run. Losing every completed
+            # question to one exception is unaffordable here: a full pass over
+            # this set costs most of a day's token budget, so partial results
+            # are worth keeping and labelling rather than discarding.
+            stats["errors"] += 1
+            print(f"  {r['id']:<9} STOPPED — {type(exc).__name__}: "
+                  f"{' '.join(str(exc).split())[:160]}")
+            stats["incomplete_after"] = r["id"]
+            break
+        stats["attempted"] += 1
         result = outcome(state)
         answered = result == "answered"
         rewrote = any(step.startswith("rewrite") for step in state["path"])
@@ -170,19 +191,28 @@ def evaluate(path: Path, app, judges: list) -> dict:
                 cited = any(g in state["response"].split("Sources:")[-1]
                             for g in r["gold_doc_ids"])
                 stats["cites_gold"] += cited
-                faithful, judge_name = judge_faithfulness(
+                faithful, judge_name, reason = judge_faithfulness(
                     judges, state["hits"], state["response"])
+                if judge_name:
+                    judges_used.add(judge_name)
                 if faithful is None:
                     f_mark = "unjudged (all judges down)"
                 else:
                     stats["judged"] += 1
                     stats["faithful"] += faithful
                     f_mark = f"faithful={'✓' if faithful else '✗'}"
+                    if not faithful:
+                        unfaithful.append((r["id"], judge_name, reason))
                 verdict = f"answered — cites_gold={'✓' if cited else '✗'} {f_mark}"
         rw = " [rewrote]" if rewrote else ""
         print(f"  {r['id']:<9} {verdict}{rw}")
         time.sleep(PAUSE_SECONDS)
 
+    if stats.get("errors"):
+        print(f"\n  INCOMPLETE RUN: stopped at {stats.get('incomplete_after')} "
+              f"after {stats['attempted']}/{len(rows)} questions. The rates below "
+              f"are computed over what completed and are NOT comparable with a "
+              f"full run — re-run when quota allows.")
     if stats["traps"]:
         print(f"\n  trap refusal   = {stats['traps_refused']}/{stats['traps']}")
     if stats["ambig"]:
@@ -194,14 +224,40 @@ def evaluate(path: Path, app, judges: list) -> dict:
         print(f"  cites gold doc = {stats['cites_gold']}/{stats['answered']}")
         print(f"  faithfulness   = {stats['faithful']}/{stats['judged']} "
               f"({stats['answered'] - stats['judged']} unjudged)")
+        if unfaithful:
+            print("\n  judged unfaithful:")
+            for qid, jname, reason in unfaithful:
+                print(f"    {qid}  [{jname}]  {reason[:150]}")
+        if len(judges_used) > 1:
+            print(
+                "\n  WARNING: more than one judge ran during this file "
+                f"({', '.join(sorted(judges_used))}). A free-tier judge that dies "
+                "mid-run is silently replaced by the next one, so the faithfulness "
+                "score above mixes judges of different strictness and is NOT a "
+                "single measurement. Re-run pinned to one judge: --judge <name>."
+            )
     print(f"  rewrite loop used on {stats['rewrites']} question(s)")
     return stats
 
 
 def main() -> None:
-    files = [Path(a) for a in sys.argv[1:]] or [ROOT / "evals" / "golden_set.jsonl",
-                                               ROOT / "evals" / "dev_set.jsonl"]
+    args = sys.argv[1:]
+    pinned = None
+    if "--judge" in args:
+        i = args.index("--judge")
+        pinned = args[i + 1]
+        del args[i:i + 2]
+    files = [Path(a) for a in args] or [ROOT / "evals" / "golden_set.jsonl",
+                                        ROOT / "evals" / "dev_set.jsonl"]
     judges = make_judges()
+    if pinned:
+        judges = [(j, n) for j, n in judges if pinned in n]
+        if not judges:
+            sys.exit(f"No judge matching {pinned!r}. Available: "
+                     f"{[n for _, n in make_judges()]}")
+        # Pinned means pinned: no silent substitution if this one dies. A run
+        # with a consistent judge and gaps beats one with a hidden handover.
+        print(f"judge pinned to {judges[0][1]} — no fallback")
     app = build_graph()
     totals: dict[str, int] = {}
     for f in files:
