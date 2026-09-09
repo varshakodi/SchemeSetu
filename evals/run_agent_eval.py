@@ -185,7 +185,7 @@ def evaluate(path: Path, app, judges: list) -> dict:
             # are worth keeping and labelling rather than discarding.
             stats["errors"] += 1
             print(f"  {r['id']:<9} STOPPED — {type(exc).__name__}: "
-                  f"{' '.join(str(exc).split())[:160]}")
+                  f"{' '.join(str(exc).split())[:400]}")  # full body: it names the meter
             stats["incomplete_after"] = r["id"]
             break
         stats["attempted"] += 1

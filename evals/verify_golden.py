@@ -27,10 +27,13 @@ import json
 import os
 import re
 import sys
+from pathlib import Path
 
 DEFAULT_FILE = "evals/golden_candidates.jsonl"
 TYPES = {"factual", "synthesis", "hindi", "trap", "ambiguous"}
 PRD_MINIMUM = {"factual": 20, "synthesis": 10, "hindi": 10, "trap": 10, "ambiguous": 5}
+# Word-overlap above this with any dev question counts as the same question.
+OVERLAP_LIMIT = 0.5
 
 # Subjects the traps ask about. Each must stay absent from the corpus.
 TRAP_SUBJECTS = {
@@ -45,6 +48,10 @@ TRAP_SUBJECTS = {
     "g-059": [r"drone"],
     "g-060": [r"ladli|laadli|behna"],
 }
+
+
+def _words(text: str) -> set[str]:
+    return set(re.findall(r"[\w\u0900-\u097F]+", text.lower().replace(",", "")))
 
 
 def load_corpus() -> dict[str, str]:
@@ -110,6 +117,34 @@ def check_traps(rows: list[dict], corpus: dict[str, str], fail) -> None:
                     )
 
 
+def check_no_dev_overlap(rows: list[dict], fail) -> None:
+    """No golden question may duplicate a dev-set question.
+
+    The dev set is what the system was tuned against -- chunking, rerank pool,
+    refusal threshold. A golden question that also appears there is measuring
+    a question the system was already optimised for, which is the exact
+    leakage the two-set split exists to prevent.
+
+    This check exists because it happened: 16 of the first 68 golden questions
+    were near-duplicates of dev questions, 8 of them word-for-word. Writing
+    questions "from the corpus" is not enough -- the same corpus produces the
+    same obvious questions twice.
+    """
+    dev_path = Path(__file__).with_name("dev_set.jsonl")
+    if not dev_path.exists():
+        return
+    dev = [json.loads(line) for line in open(dev_path, encoding="utf-8")]
+    dev_words = [_words(d["question"]) for d in dev]
+    for r in rows:
+        gw = _words(r["question"])
+        for d, dw in zip(dev, dev_words):
+            overlap = len(gw & dw) / max(1, len(gw | dw))
+            if overlap >= OVERLAP_LIMIT:
+                fail(f"{r['id']}: {overlap:.0%} word overlap with dev question "
+                     f"{d['id']} -- the system was tuned on that. Rewrite it.")
+                break
+
+
 def check_composition(rows: list[dict], warn) -> None:
     counts = {t: sum(1 for r in rows if r["type"] == t) for t in sorted(TYPES)}
     for t, minimum in PRD_MINIMUM.items():
@@ -137,6 +172,7 @@ def main() -> int:
         ("gold documents exist", lambda: check_gold_docs(rows, corpus, fail)),
         ("figures supported", lambda: check_figures(rows, corpus, fail)),
         ("traps still unanswerable", lambda: check_traps(rows, corpus, fail)),
+        ("no overlap with the dev set", lambda: check_no_dev_overlap(rows, fail)),
         ("composition", lambda: check_composition(rows, warn)),
     ):
         before = len(failures)

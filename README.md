@@ -58,16 +58,20 @@ keep — see the roadmap.
 The headline numbers come from a **frozen golden set of 68 questions** — 33
 factual, 10 multi-document synthesis, 10 Hindi, 10 out-of-corpus traps and 5
 deliberately underspecified. It was written from the corpus, verified by its
-own test suite, frozen, and run once. Nothing was tuned against it.
+own test suite, frozen, and run once.
 
 | Metric | Result | Target (PRD §5) | |
 |---|---|---|---|
-| hit@5 | **0.94** (50/53) | ≥ 0.85 | ✓ |
-| MRR@10 | **0.909** | — | |
-| Trap refusal | **1.00** (10/10) | ≥ 0.90 | ✓ |
-| False refusal | **0.08** (4/53) | ≤ 0.10 | ✓ |
-| Cites the gold document | **48/49** | — | |
+| hit@5 | **0.93** (37/40) | ≥ 0.85 | ✓ |
+| MRR@10 | **0.879** | — | |
+| Trap refusal | **1.00** (7/7) | ≥ 0.90 | ✓ |
+| Cites the gold document | 48/49 *(full set)* | — | |
+| False refusal | 0.08 *(full set, agent-level)* | ≤ 0.10 | ✓ |
 | Faithfulness | *not yet validly measured* | ≥ 0.90 | see below |
+
+Measured on the **52 questions with no dev-set twin**. The frozen set has 68, but
+16 turned out to duplicate questions the system was tuned against — see *What the
+golden set caught*, below. Rows marked *(full set)* still await a clean re-run.
 
 Tuning happened on a separate dev set, never on these questions. That
 separation is the whole point: numbers from a set you tuned against describe
@@ -84,8 +88,20 @@ with zero word overlap; embeddings blur exact names — and fusion covers both.
 
 ### What the golden set caught
 
-Freezing a real question set immediately found two things the saturated dev
-set could not. Both are documented rather than quietly fixed.
+Freezing a real question set found three things the saturated dev set could
+not. All are documented rather than quietly fixed.
+
+**The evaluation set leaked, and the check that finds it is now automated.**
+16 of the 68 golden questions were near-duplicates of dev-set questions — 8
+word-for-word. The dev set is what chunking, `RERANK_POOL` and the refusal
+threshold were tuned against, so those questions measured a system already
+optimised for them. Drafting "from the corpus" was not enough: the same corpus
+produces the same obvious questions twice. Re-measuring on the 52 questions
+with no dev twin moved hit@5 from 0.94 to 0.93 and MRR from 0.909 to 0.879 —
+the leakage inflated the numbers but did not manufacture them. The original
+row is withdrawn rather than deleted, and `evals/verify_golden.py` now fails
+if any golden question overlaps a dev question by more than half its words.
+See [`decisions.md`](decisions.md) 024.
 
 **Rank fusion cannot tell silence from a vote.** A Hindi question's gold
 document sits at *dense rank 1* and *hybrid rank 19* — outside the rerank
