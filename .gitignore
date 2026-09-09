@@ -14,3 +14,4 @@ data/raw/
 # needs it to run without rebuilding (and without shipping the corpus).
 # Rebuild after any corpus change:  python naive/rag.py index
 
+.streamlit/secrets.toml

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -27,6 +28,31 @@ import streamlit as st
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
+
+
+def _bridge_secrets_to_env() -> None:
+    """Make Streamlit Cloud's secrets visible to code that reads os.environ.
+
+    Locally the API key comes from the shell (`~/.zshrc`); on Streamlit
+    Community Cloud it comes from the app's Secrets box and arrives as
+    `st.secrets`. `agent/llm.py` deliberately knows nothing about Streamlit --
+    the CLI and the eval harnesses import it too -- so the UI bridges the two
+    here rather than teaching the LLM seam about the web framework.
+
+    `setdefault`, not assignment: a key already in the environment wins, so a
+    local run with a shell variable behaves exactly as it did before.
+    """
+    try:
+        for key, value in st.secrets.items():
+            if isinstance(value, str):
+                os.environ.setdefault(key, value)
+    except Exception:
+        # No secrets configured is normal (local runs use the shell), and
+        # st.secrets raises rather than returning empty when there is no file.
+        pass
+
+
+_bridge_secrets_to_env()
 
 from agent.llm import available_provider  # noqa: E402
 from naive.rag import CHUNKS_FILE, search  # noqa: E402
