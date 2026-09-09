@@ -7,6 +7,10 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Evals](https://img.shields.io/badge/evals-tracked_every_phase-orange.svg)](evals/results.md)
 
+**▶ Try it live: [schemesetu.streamlit.app](https://schemesetu.streamlit.app)** — ask in English or Hindi.
+Free hosting sleeps after ~12 hours idle, so the first visit takes a minute to wake, and an answer
+takes ~22 s on a shared CPU (1.3 s locally — see [`evals/results.md`](evals/results.md) row 7).
+
 SchemeSetu is a bilingual (English/Hindi) retrieval-augmented generation (RAG)
 system over official Indian government scheme documents — PM-KISAN, PMAY-G,
 Ayushman Bharat, scholarships, pensions and more. It is built
