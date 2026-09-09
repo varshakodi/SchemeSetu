@@ -33,6 +33,47 @@ question set, and every decision is recorded with its evidence in
   in three ways: citations to the exact source passage, a tracked
   honest-refusal rate on out-of-corpus questions, and a public eval report.
 
+## What it looks like
+
+<p align="center">
+  <img src="docs/screenshots/01-home.png" width="820" alt="SchemeSetu home screen showing suggested questions in English and Hindi">
+</p>
+
+The empty state says what the assistant actually has: **23 official documents**,
+not "everything". Suggested questions are mixed English and Hindi, because the
+system is bilingual at the retrieval layer, not through a translate button.
+
+<p align="center">
+  <img src="docs/screenshots/02-answer-and-trace.png" width="820" alt="A cited answer about PMAY-G with the reasoning trace expanded">
+</p>
+
+Every claim carries a citation marker. *How I found this* shows the agent's
+actual path — understood, searched, drafted from those documents only, checked
+every statement against the sources — in plain language rather than as a
+developer trace. A citizen deciding whether to trust an answer deserves to see
+how it was reached.
+
+<p align="center">
+  <img src="docs/screenshots/03-citations.png" width="820" alt="The citation panel showing four source passages from the PMAY-G documents">
+</p>
+
+*Where this comes from* opens the actual retrieved passages, each labelled with
+its document and section. The numbers in the answer map to the numbers here, so
+a claim can be checked against its source in one click. This is the difference
+between an answer and a *checkable* answer.
+
+<p align="center">
+  <img src="docs/screenshots/04-hindi.png" width="820" alt="A romanised Hindi statement answered in full Devanagari Hindi with citations">
+</p>
+
+The hardest case, working. The user typed **romanised Hindi** — *"mein ek low
+income kisan hu"* — which is not a question, not Devanagari, and not English.
+The answer comes back in full Hindi, correctly identifies PM-KISAN, lists the
+eligibility conditions and the ₹6,000 in three instalments, and cites the
+English source documents it drew from. Nothing was translated: BGE-M3 puts
+Hindi and English meaning in one vector space, so a Hindi query retrieves
+English passages directly (see [`decisions.md`](decisions.md) 015).
+
 ## How it works
 
 ```mermaid
@@ -170,7 +211,7 @@ ingest/             corpus loading, cleaning, chunking strategies, PDF parsing
 data/registry.csv   provenance for every corpus document (source, date, status)
 evals/              golden/dev sets, metric definitions, per-phase results
 agent/              LangGraph state machine and the provider-agnostic LLM seam
-docs/               interview notes: pitch, definitions, the debugging stories
+docs/               interview notes, plus the screenshots used above
 deploy/             deployment bundle and walkthrough
 scripts/doctor.py   preflight check — deps, corpus, models, a live query
 tests/              unit tests (run in CI)
