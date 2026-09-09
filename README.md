@@ -37,7 +37,7 @@ flowchart LR
     Q --> B[BM25 keyword retrieval\nbuilt from scratch]
     D --> F[Reciprocal\nRank Fusion]
     B --> F
-    F --> R[Cross-encoder rerank\ntop 20 to top 5]
+    F --> R[Cross-encoder rerank\ntop 16 to top 4]
     R --> T{Confidence\nthreshold}
     T -->|above| G[Claude generates\ncited answer]
     T -->|below| N[Honest refusal]
@@ -51,10 +51,25 @@ keep — see the roadmap.
 
 ## Evaluation-driven development
 
-Retrieval quality on the dev set (v2, 16 questions — keyword, paraphrase,
-synthesis and trap types):
+The headline numbers come from a **frozen golden set of 68 questions** — 33
+factual, 10 multi-document synthesis, 10 Hindi, 10 out-of-corpus traps and 5
+deliberately underspecified. It was written from the corpus, verified by its
+own test suite, frozen, and run once. Nothing was tuned against it.
 
-| Retrieval mode | hit@5 | MRR@10 |
+| Metric | Result | Target (PRD §5) | |
+|---|---|---|---|
+| hit@5 | **0.94** (50/53) | ≥ 0.85 | ✓ |
+| MRR@10 | **0.909** | — | |
+| Trap refusal | **1.00** (10/10) | ≥ 0.90 | ✓ |
+| False refusal | **0.08** (4/53) | ≤ 0.10 | ✓ |
+| Cites the gold document | **48/49** | — | |
+| Faithfulness | *not yet validly measured* | ≥ 0.90 | see below |
+
+Tuning happened on a separate dev set, never on these questions. That
+separation is the whole point: numbers from a set you tuned against describe
+how well the system does on questions it was already optimised for.
+
+| Retrieval mode (dev set, tuning evidence) | hit@5 | MRR@10 |
 |---|---|---|
 | Dense embeddings only | 0.93 | 0.940 |
 | BM25 only | 0.93 | 0.929 |
@@ -62,9 +77,36 @@ synthesis and trap types):
 
 The two retrievers fail in complementary ways — BM25 cannot find a paraphrase
 with zero word overlap; embeddings blur exact names — and fusion covers both.
-The full phase-by-phase table, including trap-refusal analysis, lives in
-[`evals/results.md`](evals/results.md). The methodology (frozen golden set,
-separate dev set, metric definitions) is documented in
+
+### What the golden set caught
+
+Freezing a real question set immediately found two things the saturated dev
+set could not. Both are documented rather than quietly fixed.
+
+**Rank fusion cannot tell silence from a vote.** A Hindi question's gold
+document sits at *dense rank 1* and *hybrid rank 19* — outside the rerank
+pool, so the cross-encoder never scored it. BM25 is language-blind and scores
+every chunk exactly 0.000 for a Devanagari query, but sorting an all-zero
+array still yields an order, and RRF hands that arbitrary order real weight.
+Noise outvoted a correct hit. A one-line guard is written but **not applied**:
+the dev set scores 1.00 either way and cannot validate it, and changing
+retrieval after freezing would invalidate the numbers above. See
+[`decisions.md`](decisions.md) 021.
+
+**A judge that dies mid-run silently changes the metric.** Faithfulness first
+read 0.84, under target. The cause was not the system: the primary judge's
+free tier allows 20 requests/day, so it graded the first ~20 answers, hit
+quota, and was silently replaced by a fallback — different questions graded by
+judges of different strictness. Hand-checking found the "failures" correct and
+well grounded. The harness now records which judge graded each answer, keeps
+the reason it used to discard, warns when the judge changes mid-run, and
+accepts `--judge` to pin one. The number is reported as unmeasured until a
+single-judge run completes, rather than quoting a figure known to be invalid.
+See [`decisions.md`](decisions.md) 022.
+
+The full phase-by-phase table lives in [`evals/results.md`](evals/results.md).
+The methodology — frozen golden set, separate dev set, metric definitions, and
+the test suite that checks the answer key itself — is in
 [`evals/README.md`](evals/README.md).
 
 ## Quickstart
