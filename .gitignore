@@ -15,3 +15,6 @@ data/raw/
 # Rebuild after any corpus change:  python naive/rag.py index
 
 .streamlit/secrets.toml
+
+# personal study notes — kept on disk, never published
+private/

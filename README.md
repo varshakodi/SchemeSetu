@@ -190,7 +190,7 @@ data/registry.csv   provenance for every corpus document
 deploy/             deployment bundle and walkthrough
 scripts/doctor.py   preflight diagnostics
 tests/              unit tests, run in CI
-docs/               screenshots and reference notes
+docs/               screenshots used in this README
 ```
 
 The corpus is not committed; it is rebuildable from the source URLs in the
