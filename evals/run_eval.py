@@ -42,16 +42,19 @@ K_HIT = 5
 K_MRR = 10
 
 
+from slices import split  # noqa: E402
+
+
 def load_jsonl(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 
 
 def evaluate(path: Path) -> None:
     rows = load_jsonl(path)
-    answerable = [r for r in rows if r.get("gold_doc_ids")]
-    traps = [r for r in rows if not r.get("gold_doc_ids")]
+    answerable, traps, ambiguous = split(rows)
 
-    print(f"\n=== {path.name}: {len(answerable)} answerable, {len(traps)} traps ===")
+    print(f"\n=== {path.name}: {len(answerable)} answerable, {len(traps)} traps, "
+          f"{len(ambiguous)} ambiguous ===")
 
     hits, rranks = 0, []
     ans_rerank, trap_rerank = [], []
@@ -77,6 +80,16 @@ def evaluate(path: Path) -> None:
         print(f"  [TRAP] top1_rerank={rr:+.2f}  {r['id']}  {r['question'][:60]}"
               if rr is not None else
               f"  [TRAP] top1_cos={top['cosine']:.3f}  {r['id']}  {r['question'][:60]}")
+
+    for r in ambiguous:
+        # No gold document and no refusal expected: correct behaviour is to ask
+        # for the missing detail, which retrieval alone cannot do. Score is
+        # printed for information and excluded from both rates -- the agent
+        # harness grades these against the rubric in the row.
+        top = search(r["question"], k=1)[0]
+        rr = top.get("rerank")
+        score = f"top1_rerank={rr:+.2f}" if rr is not None else f"top1_cos={top['cosine']:.3f}"
+        print(f"  [AMBIG] {score}  {r['id']}  {r['question'][:60]}")
 
     if answerable:
         print(f"\n  hit@{K_HIT}  = {hits}/{len(answerable)} = {hits / len(answerable):.2f}")

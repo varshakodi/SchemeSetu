@@ -34,6 +34,7 @@ sys.path.insert(0, str(ROOT))
 from agent.graph import build_graph  # noqa: E402
 from agent.llm import PROVIDERS, OpenAICompatLLM, available_provider, get_llm  # noqa: E402
 from naive.rag import build_context  # noqa: E402
+from slices import split  # noqa: E402
 
 PAUSE_SECONDS = 2.0
 
@@ -65,6 +66,47 @@ def make_judges() -> list[tuple]:
     return judges
 
 
+def outcome(state: dict) -> str:
+    """What the agent actually did: 'answered', 'refused' or 'chitchat'.
+
+    Read from the graph path, not from whether the reply contains "Sources:".
+    That substring test was wrong in both directions -- a refusal explaining
+    which sources it checked reads as an answer, and a chitchat reply reads as
+    a refusal. The same bug shipped in the UI and was fixed there; the harness
+    kept it, which is worse, because a harness reports a number rather than
+    looking odd on screen.
+    """
+    last = state["path"][-1] if state.get("path") else ""
+    if last == "refuse":
+        return "refused"
+    if last == "direct_reply":
+        return "chitchat"
+    return "answered"
+
+
+def judge_ambiguous(judges: list, question: str, criterion: str, response: str):
+    """Grade an underspecified question against the rubric carried in the row.
+
+    Correctness here is a property of behaviour, not of content, so there is
+    nothing to string-match: the question is whether the agent asked for what
+    was missing or named the assumption it answered under.
+    """
+    for judge, name in list(judges):
+        try:
+            verdict = judge.complete(
+                "You grade an assistant's handling of an underspecified "
+                "question against a stated criterion. Reply PASS or FAIL on "
+                "the first line, then one short sentence of reason.",
+                f"Question asked:\n{question}\n\nCriterion:\n{criterion}\n\n"
+                f"Assistant's reply:\n{response}",
+                max_tokens=120)
+            return verdict.strip().upper().startswith("PASS"), name, verdict.strip()
+        except Exception:
+            judges.remove((judge, name))
+            continue
+    return None, None, ""
+
+
 def judge_faithfulness(judges: list, hits: list[dict], answer: str):
     """Return (True/False, judge_name) or (None, None) if every judge is down."""
     for judge, name in list(judges):
@@ -88,21 +130,36 @@ def judge_faithfulness(judges: list, hits: list[dict], answer: str):
 
 def evaluate(path: Path, app, judges: list) -> dict:
     rows = load_jsonl(path)
+    answerable, traps, ambiguous = split(rows)
+    kind = {r["id"]: k for group, k in
+            ((answerable, "answerable"), (traps, "trap"), (ambiguous, "ambiguous"))
+            for r in group}
     stats = {"traps": 0, "traps_refused": 0, "ans": 0, "false_refusals": 0,
              "cites_gold": 0, "faithful": 0, "answered": 0, "judged": 0,
-             "rewrites": 0}
+             "rewrites": 0, "ambig": 0, "ambig_ok": 0, "ambig_judged": 0}
 
     print(f"\n=== {path.name} — full agent, judges={[n for _, n in judges]} ===")
     for r in rows:
         state = app.invoke({"question": r["question"], "path": []})
-        answered = "Sources:" in state.get("response", "")
+        result = outcome(state)
+        answered = result == "answered"
         rewrote = any(step.startswith("rewrite") for step in state["path"])
         stats["rewrites"] += rewrote
 
-        if not r.get("gold_doc_ids"):  # trap
+        if kind[r["id"]] == "trap":
             stats["traps"] += 1
             stats["traps_refused"] += (not answered)
             verdict = "refused ✓" if not answered else "ANSWERED ✗ (should refuse)"
+        elif kind[r["id"]] == "ambiguous":
+            stats["ambig"] += 1
+            ok, judge_name, why = judge_ambiguous(
+                judges, r["question"], r["answer"], state.get("response", ""))
+            if ok is None:
+                verdict = "ambiguous — unjudged (all judges down)"
+            else:
+                stats["ambig_judged"] += 1
+                stats["ambig_ok"] += ok
+                verdict = f"ambiguous — {'handled ✓' if ok else 'CONFIDENT ✗'} ({why.splitlines()[-1][:70]})"
         else:
             stats["ans"] += 1
             if not answered:
@@ -128,6 +185,9 @@ def evaluate(path: Path, app, judges: list) -> dict:
 
     if stats["traps"]:
         print(f"\n  trap refusal   = {stats['traps_refused']}/{stats['traps']}")
+    if stats["ambig"]:
+        print(f"  ambiguous ok   = {stats['ambig_ok']}/{stats['ambig_judged']} "
+              f"({stats['ambig'] - stats['ambig_judged']} unjudged)")
     if stats["ans"]:
         print(f"  false refusal  = {stats['false_refusals']}/{stats['ans']}")
     if stats["answered"]:
@@ -157,6 +217,10 @@ def main() -> None:
         rate = totals["false_refusals"] / totals["ans"]
         print(f"  false refusal {rate:.2f}  (target <= 0.10) "
               f"{'✓' if rate <= 0.10 else '✗'}")
+    if totals.get("ambig_judged"):
+        rate = totals["ambig_ok"] / totals["ambig_judged"]
+        print(f"  ambiguous     {rate:.2f}  (no PRD target — measures a known "
+              f"gap: the agent has no clarify path)")
     if totals.get("judged"):
         print(f"  faithfulness  {totals['faithful'] / totals['judged']:.2f}  "
               f"on {totals['judged']}/{totals['answered']} judged "

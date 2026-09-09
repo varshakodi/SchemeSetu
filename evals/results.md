@@ -1,6 +1,7 @@
 # Eval results — SchemeSetu
 
-Golden set: **v1 — FROZEN on: ____ (fill in when frozen)** · dev set used for tuning only.
+Golden set: **v1 — 68 questions, FROZEN 2026-09-09** · dev set used for tuning only.
+Verify the answer key after any corpus change: `python evals/verify_golden.py`.
 Targets (PRD §5): hit@5 ≥ 0.85 · faithfulness ≥ 0.90 · trap refusal ≥ 0.90 · false refusal ≤ 0.10.
 
 | Phase | Date | hit@5 | MRR@10 | Faithfulness | Trap refusal | False refusal | p50 latency | Notes |
