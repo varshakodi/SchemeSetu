@@ -110,12 +110,18 @@ separate development set.
 | Retrieval hit@5 | **0.96** | ≥ 0.85 ✓ |
 | MRR@10 | **0.925** | — |
 | Out-of-corpus refusal | **1.00** | ≥ 0.90 ✓ |
+| False refusal | **0.08** | ≤ 0.10 ✓ |
+| Answer relevance | **0.96** | ≥ 0.85 ✓ |
+| Faithfulness | 0.83 | ≥ 0.90 ✗ |
 | Hindi vs English parity | **+4.9%** | within 10% ✓ |
 | Cost per query | **₹0** | ≤ ₹1 ✓ |
 | Latency, p50 | 22 s hosted · 1.3 s local | ≤ 3 s ✗ |
 
 Latency is bound by a shared free-tier vCPU running a 568M-parameter
 cross-encoder, not by the algorithm; the same work takes 1.3 s locally.
+Faithfulness is judged by a model from a different family than the generator,
+pinned for the whole run so the score is one measurement rather than an average
+over judges.
 
 Selected results across build phases:
 

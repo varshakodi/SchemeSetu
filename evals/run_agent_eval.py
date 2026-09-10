@@ -176,7 +176,7 @@ def judge_faithfulness(judges: list, hits: list[dict], answer: str):
                 f"Context passages:\n{build_context(hits)}\n\nAnswer:\n{answer}",
                 max_tokens=150)
             return (verdict.strip().upper().startswith("PASS"), name,
-                    " ".join(verdict.split())[:200])
+                    " ".join(verdict.split())[:1200])
         except Exception:
             # Dead for this run (daily quota, outage) — remove it so later
             # questions don't pay its failure latency again.
@@ -250,7 +250,13 @@ def evaluate(path: Path, app, judges: list, resume: bool = False) -> dict:
 
         rec = {"id": r["id"], "kind": kind[r["id"]], "outcome": outcome(state),
                "rewrote": any(s.startswith("rewrite") for s in state["path"]),
-               "gen_tokens": gen_tokens}
+               "gen_tokens": gen_tokens,
+               # The answer and its sources are stored so a disputed verdict
+               # can be re-read later. Auditing one previously meant re-running
+               # the question, which costs tokens the free tier may not have --
+               # and the judge is the component most likely to be wrong.
+               "answer": (state.get("response") or "").split("Sources:")[0].strip(),
+               "sources": [h["chunk_id"] for h in state.get("hits", [])]}
         answered = rec["outcome"] == "answered"
 
         if rec["kind"] == "trap":
@@ -259,7 +265,7 @@ def evaluate(path: Path, app, judges: list, resume: bool = False) -> dict:
         elif rec["kind"] == "ambiguous":
             ok, jname, why = judge_ambiguous(
                 judges, r["question"], r["answer"], state.get("response", ""))
-            rec["ok"], rec["reason"] = ok, why[:200]
+            rec["ok"], rec["reason"] = ok, why[:1200]
             if jname:
                 judges_used.add(jname)
             verdict = ("ambiguous — unjudged" if ok is None else
