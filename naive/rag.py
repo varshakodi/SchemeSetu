@@ -135,7 +135,7 @@ def get_embedder():
     return _embedder
 
 
-def build_index() -> None:
+def build_index(force: bool = False) -> None:
     """Chunk every document, embed every chunk, save vectors + chunk texts to disk.
 
     We pass normalize_embeddings=True so every vector has length 1. Geometry
@@ -152,6 +152,24 @@ def build_index() -> None:
     for doc_id, title, text in docs:
         for i, chunk in enumerate(chunk_fn(text, title=title)):
             records.append({"doc_id": doc_id, "chunk_id": f"{doc_id}#{i}", "text": chunk})
+
+    # The repository ships a prebuilt index so the app runs without the corpus,
+    # which is not committed. A clone therefore has 3 sample documents on disk
+    # and 23 documents' worth of index -- and re-indexing silently replaced
+    # 132 chunks with 10, leaving a crippled system and no error. Refuse the
+    # shrink unless it is asked for explicitly.
+    if CHUNKS_FILE.exists() and not force:
+        existing = len(json.loads(CHUNKS_FILE.read_text()))
+        if existing >= 2 * max(1, len(records)):
+            sys.exit(
+                f"Refusing to overwrite the index: it holds {existing} chunks and "
+                f"only {len(records)} were found on disk.\n"
+                f"The corpus in data/raw is not committed -- see data/registry.csv "
+                f"for every source URL.\n"
+                f"The shipped index already covers the full corpus, so you only need "
+                f"to rebuild after changing it.\n"
+                f"To rebuild anyway:  python naive/rag.py index --force"
+            )
 
     print(f"Embedding {len(records)} chunks from {len(docs)} documents "
           f"with {EMBED_MODEL} ({CHUNK_STRATEGY} chunking) ...")
@@ -337,7 +355,9 @@ def generate_answer(query: str, hits: list[dict]) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("index", help="chunk + embed all documents, save the index")
+    idx = sub.add_parser("index", help="chunk + embed all documents, save the index")
+    idx.add_argument("--force", action="store_true",
+                     help="rebuild even if it would shrink the shipped index")
     ask = sub.add_parser("ask", help="retrieve chunks for a question (and answer, if key set)")
     ask.add_argument("question")
     ask.add_argument("--mode", choices=["dense", "bm25", "hybrid"], default=None,
@@ -345,7 +365,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "index":
-        build_index()
+        build_index(force=args.force)
         return
 
     hits = search(args.question, mode=args.mode)

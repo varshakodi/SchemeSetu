@@ -166,9 +166,18 @@ git clone https://github.com/varshakodi/SchemeSetu.git && cd SchemeSetu
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 
-python ingest/parse.py        # extract text from source PDFs
-python naive/rag.py index     # chunk and embed the corpus
 python naive/rag.py ask "Who is eligible for PM-KISAN?"
+```
+
+The search index ships with the repository, so retrieval works immediately —
+the first run downloads the embedding and reranking models (~4.6 GB, once).
+The corpus itself is not committed; every source URL is in
+[`data/registry.csv`](data/registry.csv). Rebuild the index only after changing
+the corpus:
+
+```bash
+python ingest/parse.py        # extract text from any PDFs in data/raw
+python naive/rag.py index     # rechunk and re-embed
 ```
 
 `./demo.sh` runs a preflight check ([`scripts/doctor.py`](scripts/doctor.py) —
